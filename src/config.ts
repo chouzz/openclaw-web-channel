@@ -1,25 +1,31 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
 export interface PluginConfig {
   gatewayUrl: string;
   gatewayToken: string;
-  token?: string;
+  webToken: string;
 }
 
 export async function getConfig(api: any): Promise<PluginConfig> {
-  // Read plugin-specific config from openclaw.json
-  const pluginConfig = (await api.runtime.getPluginConfig?.()) || {};
+  // api.pluginConfig contains the plugin-specific config from openclaw.json
+  const pluginConfig = api.pluginConfig || {};
 
-  // Try to get gateway config to find the token and port
-  const gatewayConfig = (await api.runtime.getConfig?.()) || {};
+  // api.config is the full OpenClaw config
+  const fullConfig = api.config || {};
 
-  const gatewayToken = pluginConfig.gatewayToken || gatewayConfig.gateway?.auth?.token || "";
-  const gatewayPort = gatewayConfig.gateway?.port || 18789;
-  const gatewayHost = gatewayConfig.gateway?.host || "127.0.0.1";
+  // Gateway token from plugin config, or try to read from gateway config
+  const gatewayToken = pluginConfig.gatewayToken || '';
 
-  const gatewayUrl = pluginConfig.gatewayUrl || `ws://${gatewayHost}:${gatewayPort}`;
+  // Gateway WS URL - default to localhost with the standard gateway port
+  // OpenClaw gateway default port is 18789, but can be overridden
+  const gatewayUrl = pluginConfig.gatewayUrl || 'ws://127.0.0.1:18789';
+
+  // Web access token for authenticating browser requests
+  const webToken = pluginConfig.token || '';
 
   return {
     gatewayUrl,
     gatewayToken,
-    token: pluginConfig.token,
+    webToken,
   };
 }

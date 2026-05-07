@@ -6,7 +6,7 @@ import { getConfig } from './config.js';
 async function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
     req.on('end', () => resolve(body));
     req.on('error', (err) => reject(err));
   });
@@ -18,10 +18,18 @@ function sendJson(res: ServerResponse, status: number, data: any) {
 }
 
 export async function handleChat(req: IncomingMessage, res: ServerResponse, api: any) {
-  try {
-    const config = await getConfig(api);
-    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
 
+  try {
+    const config = getConfig(api);
+    if (config.webToken) {
+      const auth = req.headers['authorization'];
+      if (!auth || auth !== `Bearer ${config.webToken}`) {
+        return sendJson(res, 401, { error: 'Unauthorized' });
+      }
+    }
+
+    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const bodyStr = await readBody(req);
     const { sessionId, message } = JSON.parse(bodyStr);
 
@@ -31,19 +39,22 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
 
     const sessionKey = sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
 
-    // Map to keep track of listeners to avoid duplicates if possible, or just manage them simply.
-    // For a plugin, a simple global listener that filters is okay if not too many sessions.
+    // Set up event forwarding once
     if (!(gws as any)._streamingSetup) {
       (gws as any)._streamingSetup = true;
-      gws.onEvent((event) => {
+      gws.onEvent((event: any) => {
         if (event.event === 'agent') {
-          const sId = event.payload.sessionKey?.startsWith('web:')
-            ? event.payload.sessionKey.slice(4)
-            : event.payload.sessionKey;
+          const payload = event.payload || {};
+          const sId = payload.sessionKey?.startsWith('web:')
+            ? payload.sessionKey.slice(4)
+            : payload.sessionKey;
           if (sId) {
-            broadcast(sId, 'agent', event.payload);
-            if (event.payload.status === 'done') {
-              broadcast(sId, 'done', event.payload);
+            const text = payload.text || '';
+            if (text) {
+              broadcast(sId, 'agent', { text, ...payload });
+            }
+            if (payload.status === 'done') {
+              broadcast(sId, 'done', payload);
             }
           }
         }
@@ -57,13 +68,22 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
   }
 }
 
-export async function handleSSE(req: IncomingMessage, res: ServerResponse, _api: any) {
+export async function handleSSE(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  const config = getConfig(api);
+  if (config.webToken) {
+    const auth = req.headers['authorization'];
+    if (!auth || auth !== `Bearer ${config.webToken}`) {
+      return sendJson(res, 401, { error: 'Unauthorized' });
+    }
+  }
+
   const url = new URL(req.url || '', 'http://localhost');
   const sessionId = url.searchParams.get('sessionId');
 
   if (!sessionId) {
-    sendJson(res, 400, { error: 'Missing sessionId query param' });
-    return;
+    return sendJson(res, 400, { error: 'Missing sessionId query param' });
   }
 
   res.writeHead(200, {
@@ -77,13 +97,23 @@ export async function handleSSE(req: IncomingMessage, res: ServerResponse, _api:
   addConnection(sessionId, res);
 }
 
-export async function handleListSessions(_req: IncomingMessage, res: ServerResponse, api: any) {
+export async function handleListSessions(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
   try {
-    const config = await getConfig(api);
+    const config = getConfig(api);
+    if (config.webToken) {
+      const auth = req.headers['authorization'];
+      if (!auth || auth !== `Bearer ${config.webToken}`) {
+        return sendJson(res, 401, { error: 'Unauthorized' });
+      }
+    }
+
     const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const sessions = await gws.listSessions();
-    // Filter sessions that belong to web channel
-    const webSessions = (sessions || []).filter((s: any) => s.sessionKey?.startsWith('web:') || s.channel === 'web-channel');
+    const webSessions = Array.isArray(sessions)
+      ? sessions.filter((s: any) => s.sessionKey?.startsWith('web:'))
+      : [];
     sendJson(res, 200, webSessions);
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });
@@ -91,8 +121,17 @@ export async function handleListSessions(_req: IncomingMessage, res: ServerRespo
 }
 
 export async function handleHistory(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
   try {
-    const config = await getConfig(api);
+    const config = getConfig(api);
+    if (config.webToken) {
+      const auth = req.headers['authorization'];
+      if (!auth || auth !== `Bearer ${config.webToken}`) {
+        return sendJson(res, 401, { error: 'Unauthorized' });
+      }
+    }
+
     const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const url = new URL(req.url || '', 'http://localhost');
     const sessionId = url.searchParams.get('sessionId');
@@ -109,11 +148,13 @@ export async function handleHistory(req: IncomingMessage, res: ServerResponse, a
   }
 }
 
-export async function handleConfig(_req: IncomingMessage, res: ServerResponse, api: any) {
-  try {
-    const config = await getConfig(api);
-    sendJson(res, 200, config);
-  } catch (error: any) {
-    sendJson(res, 500, { error: error.message });
-  }
+export async function handleConfig(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  const config = getConfig(api);
+  // Don't expose gateway token to the browser
+  sendJson(res, 200, {
+    gatewayUrl: config.gatewayUrl,
+    hasToken: !!config.webToken,
+  });
 }
