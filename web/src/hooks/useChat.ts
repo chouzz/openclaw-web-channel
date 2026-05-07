@@ -9,6 +9,25 @@ export function useChat() {
   useEffect(() => {
     if (!currentSessionId) return;
 
+    // Load history when session changes
+    const loadHistory = async () => {
+      try {
+        const history = await apiClient.fetch(`/plugins/web-channel/api/history?sessionId=${currentSessionId}`);
+        if (history && Array.isArray(history)) {
+          const messages = history.map((m: any) => ({
+            id: m.id || Math.random().toString(),
+            role: m.role,
+            content: m.text || (Array.isArray(m.content) ? m.content.map((c: any) => c.text || '').join('') : m.content) || ''
+          }));
+          useChatStore.getState().setMessages(messages);
+        }
+      } catch (err) {
+        console.error('Failed to load history', err);
+      }
+    };
+
+    loadHistory();
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
@@ -18,10 +37,22 @@ export function useChat() {
 
     let assistantContent = '';
 
-    es.addEventListener('message', (event) => {
-      const data = JSON.parse(event.data);
-      assistantContent += data.content;
-      updateLastMessage(assistantContent);
+    es.addEventListener('agent', (event) => {
+      const payload = JSON.parse(event.data);
+      if (payload.text) {
+        assistantContent += payload.text;
+        updateLastMessage(assistantContent);
+      } else if (payload.content) {
+        // Handle full content replacement if needed
+        const textContent = Array.isArray(payload.content)
+          ? payload.content.map((c: any) => c.text || '').join('')
+          : (typeof payload.content === 'string' ? payload.content : '');
+
+        if (textContent) {
+          assistantContent = textContent;
+          updateLastMessage(assistantContent);
+        }
+      }
     });
 
     es.addEventListener('done', () => {

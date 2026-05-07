@@ -1,0 +1,12 @@
+{
+  "id": "web-channel",
+  "name": "Web Channel",
+  "description": "ChatGPT-style Web UI for OpenClaw via REST API + SSE",
+  "version": "0.1.0",
+  "channels": ["web-channel"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

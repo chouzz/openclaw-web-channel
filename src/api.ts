@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { addConnection } from './sse.js';
+import { addConnection, broadcast } from './sse.js';
+import { getGatewayWS } from './gateway-ws.js';
+import { getConfig } from './config.js';
 
 async function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -17,17 +19,39 @@ function sendJson(res: ServerResponse, status: number, data: any) {
 
 export async function handleChat(req: IncomingMessage, res: ServerResponse, api: any) {
   try {
+    const config = await getConfig(api);
+    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
+
     const bodyStr = await readBody(req);
     const { sessionId, message } = JSON.parse(bodyStr);
 
-    const ocSession = await api.runtime.getSession(sessionId);
-    await ocSession.dispatch({
-      type: 'message',
-      text: message,
-      channel: 'web-channel',
-    });
+    if (!sessionId || !message) {
+      return sendJson(res, 400, { error: 'Missing sessionId or message' });
+    }
 
-    sendJson(res, 200, { status: 'ok' });
+    const sessionKey = sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
+
+    // Map to keep track of listeners to avoid duplicates if possible, or just manage them simply.
+    // For a plugin, a simple global listener that filters is okay if not too many sessions.
+    if (!(gws as any)._streamingSetup) {
+      (gws as any)._streamingSetup = true;
+      gws.onEvent((event) => {
+        if (event.event === 'agent') {
+          const sId = event.payload.sessionKey?.startsWith('web:')
+            ? event.payload.sessionKey.slice(4)
+            : event.payload.sessionKey;
+          if (sId) {
+            broadcast(sId, 'agent', event.payload);
+            if (event.payload.status === 'done') {
+              broadcast(sId, 'done', event.payload);
+            }
+          }
+        }
+      });
+    }
+
+    const result = await gws.chatSend(sessionKey, message);
+    sendJson(res, 200, result);
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });
   }
@@ -35,10 +59,10 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
 
 export async function handleSSE(req: IncomingMessage, res: ServerResponse, _api: any) {
   const url = new URL(req.url || '', 'http://localhost');
-  const sessionId = url.pathname.split('/').pop();
+  const sessionId = url.searchParams.get('sessionId');
 
   if (!sessionId) {
-    sendJson(res, 400, { error: 'Missing sessionId' });
+    sendJson(res, 400, { error: 'Missing sessionId query param' });
     return;
   }
 
@@ -49,48 +73,37 @@ export async function handleSSE(req: IncomingMessage, res: ServerResponse, _api:
     'Access-Control-Allow-Origin': '*',
   });
 
-  // Necessary for some proxies to keep the connection open
   res.write(': keep-alive\n\n');
-
   addConnection(sessionId, res);
 }
 
 export async function handleListSessions(_req: IncomingMessage, res: ServerResponse, api: any) {
   try {
-    const sessions = await api.runtime.listSessions({ channel: 'web-channel' });
-    sendJson(res, 200, sessions);
+    const config = await getConfig(api);
+    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
+    const sessions = await gws.listSessions();
+    // Filter sessions that belong to web channel
+    const webSessions = (sessions || []).filter((s: any) => s.sessionKey?.startsWith('web:') || s.channel === 'web-channel');
+    sendJson(res, 200, webSessions);
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });
   }
 }
 
-export async function handleCreateSession(req: IncomingMessage, res: ServerResponse, api: any) {
+export async function handleHistory(req: IncomingMessage, res: ServerResponse, api: any) {
   try {
-    const bodyStr = await readBody(req);
-    const { name } = JSON.parse(bodyStr || '{}');
-
-    const session = await api.runtime.createSession({
-      name: name || 'New Chat',
-      channel: 'web-channel',
-    });
-    sendJson(res, 200, session);
-  } catch (error: any) {
-    sendJson(res, 500, { error: error.message });
-  }
-}
-
-export async function handleDeleteSession(req: IncomingMessage, res: ServerResponse, api: any) {
-  try {
+    const config = await getConfig(api);
+    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const url = new URL(req.url || '', 'http://localhost');
-    const id = url.pathname.split('/').pop();
+    const sessionId = url.searchParams.get('sessionId');
 
-    if (!id) {
-      sendJson(res, 400, { error: 'Missing session id' });
-      return;
+    if (!sessionId) {
+      return sendJson(res, 400, { error: 'Missing sessionId' });
     }
 
-    await api.runtime.deleteSession(id);
-    sendJson(res, 200, { status: 'ok' });
+    const sessionKey = sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
+    const history = await gws.chatHistory(sessionKey);
+    sendJson(res, 200, history);
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });
   }
@@ -98,7 +111,7 @@ export async function handleDeleteSession(req: IncomingMessage, res: ServerRespo
 
 export async function handleConfig(_req: IncomingMessage, res: ServerResponse, api: any) {
   try {
-    const config = await api.runtime.getConfig();
+    const config = await getConfig(api);
     sendJson(res, 200, config);
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });

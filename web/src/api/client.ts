@@ -15,6 +15,6 @@ export const apiClient = {
   },
 
   getSSEUrl(sessionId: string) {
-    return `/plugins/web-channel/api/sse/${sessionId}`;
+    return `/plugins/web-channel/api/sse?sessionId=${sessionId}`;
   },
 };

@@ -12,7 +12,8 @@ export function SessionList() {
       const data = await apiClient.fetch('/plugins/web-channel/api/sessions');
       setSessions(data);
       if (data.length > 0 && !currentSessionId) {
-        setCurrentSessionId(data[0].id);
+        const firstSessionId = data[0].sessionKey || data[0].id;
+        setCurrentSessionId(firstSessionId);
       }
     } catch (err) {
       console.error('Failed to load sessions', err);
@@ -24,28 +25,19 @@ export function SessionList() {
   }, []);
 
   const createSession = async () => {
-    try {
-      const newSession = await apiClient.fetch('/plugins/web-channel/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ name: 'New Chat' }),
-      });
-      setSessions([newSession, ...sessions]);
-      setCurrentSessionId(newSession.id);
-    } catch (err) {
-      console.error('Failed to create session', err);
-    }
+    // OpenClaw sessions are usually lazy-created on first message or manually.
+    // Since we bridge to Gateway WS, we can just pick a new random sessionId.
+    const newId = `session-${Date.now()}`;
+    setCurrentSessionId(newId);
   };
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      await apiClient.fetch(`/plugins/web-channel/api/sessions/${id}`, { method: 'DELETE' });
-      setSessions(sessions.filter((s) => s.id !== id));
-      if (currentSessionId === id) {
-        setCurrentSessionId(null);
-      }
-    } catch (err) {
-      console.error('Failed to delete session', err);
+    // Delete might not be directly supported via the bridge if sessions are transient,
+    // but we can try to implement it if needed. For now, just remove from UI.
+    setSessions(sessions.filter((s) => (s.sessionKey || s.id) !== id));
+    if (currentSessionId === id) {
+      setCurrentSessionId(null);
     }
   };
 
@@ -63,23 +55,23 @@ export function SessionList() {
       <div className="flex-1 overflow-y-auto px-2">
         {sessions.map((session) => (
           <div
-            key={session.id}
-            onClick={() => setCurrentSessionId(session.id)}
+            key={session.sessionKey || session.id}
+            onClick={() => setCurrentSessionId(session.sessionKey || session.id)}
             className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors mb-1 ${
-              currentSessionId === session.id
+              currentSessionId === (session.sessionKey || session.id)
                 ? 'bg-gray-200 dark:bg-zinc-900'
                 : 'hover:bg-gray-200 dark:hover:bg-zinc-900'
             }`}
           >
             <div className="flex items-center gap-3 truncate">
               <MessageSquare size={16} />
-              <span className="truncate text-sm">{session.name}</span>
+              <span className="truncate text-sm">{session.name || session.sessionKey || session.id}</span>
             </div>
-            {currentSessionId === session.id && (
+            {currentSessionId === (session.sessionKey || session.id) && (
               <Trash2
                 size={14}
                 className="text-gray-400 hover:text-red-500"
-                onClick={(e) => deleteSession(session.id, e)}
+                onClick={(e) => deleteSession(session.sessionKey || session.id, e)}
               />
             )}
           </div>

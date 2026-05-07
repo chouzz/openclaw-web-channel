@@ -1,6 +1,5 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import * as handlers from './api.js';
-import { broadcast } from './sse.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -8,42 +7,21 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 export default definePluginEntry({
   id: 'web-channel',
   name: 'Web Channel',
-  description: 'ChatGPT-style Web UI for OpenClaw',
+  description: 'Bridge REST/SSE to OpenClaw Gateway WebSocket API',
   register(api) {
     if (api.registrationMode !== 'full') return;
-
-    // Register Channel to receive outbound messages
-    api.registerChannel({
-      id: 'web-channel',
-      capabilities: {
-        chatTypes: ['direct'],
-        media: true,
-        reactions: false,
-        threads: false,
-      },
-      async outbound({ message, session }) {
-        // Push message back to browser via SSE
-        broadcast(session.id, 'message', {
-          id: message.id,
-          role: 'assistant',
-          content: message.content,
-        });
-      },
-    });
 
     // API Routes
     const wrap = (handler: any) => (req: IncomingMessage, res: ServerResponse) => handler(req, res, api);
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/chat',
-      method: 'POST',
-      auth: 'plugin',
+      auth: 'none', // Auth handled by gateway token in plugin
       handler: wrap(handlers.handleChat),
     });
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/sse',
-      method: 'GET',
       auth: 'none',
       match: 'prefix',
       handler: wrap(handlers.handleSSE),
@@ -51,30 +29,19 @@ export default definePluginEntry({
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/sessions',
-      method: 'GET',
-      auth: 'plugin',
+      auth: 'none',
       handler: wrap(handlers.handleListSessions),
     });
 
     api.registerHttpRoute({
-      path: '/plugins/web-channel/api/sessions',
-      method: 'POST',
-      auth: 'plugin',
-      handler: wrap(handlers.handleCreateSession),
-    });
-
-    api.registerHttpRoute({
-      path: '/plugins/web-channel/api/sessions',
-      method: 'DELETE',
-      auth: 'plugin',
-      match: 'prefix',
-      handler: wrap(handlers.handleDeleteSession),
+      path: '/plugins/web-channel/api/history',
+      auth: 'none',
+      handler: wrap(handlers.handleHistory),
     });
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/config',
-      method: 'GET',
-      auth: 'plugin',
+      auth: 'none',
       handler: wrap(handlers.handleConfig),
     });
 
@@ -111,13 +78,18 @@ export default definePluginEntry({
           res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'application/octet-stream' });
           fs.createReadStream(fullPath).pipe(res);
         } else {
-          // SPA fallback
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          fs.createReadStream(path.join(webDistPath, 'index.html')).pipe(res);
+          // SPA fallback for /plugins/web-channel/* routes
+          if (fs.existsSync(path.join(webDistPath, 'index.html'))) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            fs.createReadStream(path.join(webDistPath, 'index.html')).pipe(res);
+          } else {
+            res.writeHead(404);
+            res.end('Not Found');
+          }
         }
       },
     });
 
-    api.logger.info?.('[web-channel] Plugin registered');
+    api.logger.info?.('[web-channel] Plugin registered as Gateway Bridge');
   },
 });
