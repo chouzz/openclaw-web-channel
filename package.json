@@ -1,0 +1,27 @@
+{
+  "name": "@chouzz/openclaw-web-channel",
+  "version": "0.1.0",
+  "description": "OpenClaw Web Channel Plugin - ChatGPT-style Web UI",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": ["openclaw", "web", "channel", "plugin", "chat", "sse"],
+  "author": "chouzz",
+  "license": "MIT",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "build": "pnpm build:web && pnpm build:plugin",
+    "build:web": "cd web && pnpm install && pnpm run build",
+    "build:plugin": "echo 'No plugin build step needed for TS ESM in dev mode' ",
+    "dev": "pnpm dev:web",
+    "dev:web": "cd web && pnpm dev"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  }
+}
