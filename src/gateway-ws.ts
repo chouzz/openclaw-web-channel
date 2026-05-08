@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import type { RawData } from 'ws';
 import type { WSFrame, WSRequest, WSEvent } from './types.js';
 
 export class GatewayWS {
@@ -29,7 +30,7 @@ export class GatewayWS {
         }
       });
 
-      ws.on('message', (data) => {
+      ws.on('message', (data: RawData) => {
         try {
           const frame = JSON.parse(data.toString()) as WSFrame;
           if (frame.type === 'res') {
@@ -52,7 +53,7 @@ export class GatewayWS {
         }
       });
 
-      ws.on('error', (err) => {
+      ws.on('error', (err: Error) => {
         this.connectingPromise = null;
         reject(err);
       });
