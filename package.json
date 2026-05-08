@@ -1,12 +1,20 @@
 {
-  "name": "@chouzz/openclaw-web-channel",
-  "version": "0.1.0",
+  "name": "web-channel",
+  "version": "0.1.1",
   "description": "OpenClaw Web Channel Plugin - ChatGPT-style Web UI",
   "type": "module",
   "main": "src/index.ts",
   "keywords": ["openclaw", "web", "channel", "plugin", "chat", "sse"],
   "author": "chouzz",
   "license": "MIT",
+  "files": [
+    "src",
+    "dist",
+    "web",
+    "openclaw.plugin.json",
+    "README.md",
+    "PROPOSAL.md"
+  ],
   "openclaw": {
     "extensions": ["./src/index.ts"]
   },
