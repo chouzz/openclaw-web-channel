@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "description": "OpenClaw Web Channel Plugin - ChatGPT-style Web UI",
   "type": "module",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "keywords": ["openclaw", "web", "channel", "plugin", "chat", "sse"],
   "author": "chouzz",
   "license": "MIT",
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./src/index.ts"]
   },
   "scripts": {
     "build": "pnpm build:web && pnpm build:plugin",
