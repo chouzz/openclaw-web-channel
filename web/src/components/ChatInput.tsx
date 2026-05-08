@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, ArrowUp } from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;

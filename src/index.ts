@@ -8,7 +8,7 @@ export default definePluginEntry({
   id: 'web-channel',
   name: 'Web Channel',
   description: 'Bridge REST/SSE to OpenClaw Gateway WebSocket API',
-  register(api) {
+  register(api: any) {
     if (api.registrationMode !== 'full') return;
 
     const wrap = (handler: any) => (req: IncomingMessage, res: ServerResponse) => handler(req, res, api);

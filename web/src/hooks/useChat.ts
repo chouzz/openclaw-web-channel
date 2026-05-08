@@ -69,7 +69,7 @@ export function useChat() {
     return () => {
       es.close();
     };
-  }, [currentSessionId]);
+  }, [currentSessionId, setIsLoading, updateLastMessage]);
 
   const sendMessage = async (content: string) => {
     if (!currentSessionId) return;

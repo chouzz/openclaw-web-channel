@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import type { WSFrame, WSRequest, WSResponse, WSEvent } from './types.js';
+import type { WSFrame, WSRequest, WSEvent } from './types.js';
 
 export class GatewayWS {
   private ws: WebSocket | null = null;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, MessageSquare, Trash2 } from 'lucide-react';
 import { apiClient } from '@/api/client';
 import { useChatStore } from '@/store/chatStore';
@@ -7,7 +7,7 @@ export function SessionList() {
   const [sessions, setSessions] = useState<any[]>([]);
   const { currentSessionId, setCurrentSessionId } = useChatStore();
 
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     try {
       const data = await apiClient.fetch('/plugins/web-channel/api/sessions');
       setSessions(data);
@@ -18,11 +18,11 @@ export function SessionList() {
     } catch (err) {
       console.error('Failed to load sessions', err);
     }
-  };
+  }, [currentSessionId, setCurrentSessionId]);
 
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [loadSessions]);
 
   const createSession = async () => {
     // OpenClaw sessions are usually lazy-created on first message or manually.

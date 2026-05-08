@@ -1,17 +1,12 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
-
 export interface PluginConfig {
   gatewayUrl: string;
   gatewayToken: string;
   webToken: string;
 }
 
-export async function getConfig(api: any): Promise<PluginConfig> {
+export function getConfig(api: any): PluginConfig {
   // api.pluginConfig contains the plugin-specific config from openclaw.json
   const pluginConfig = api.pluginConfig || {};
-
-  // api.config is the full OpenClaw config
-  const fullConfig = api.config || {};
 
   // Gateway token from plugin config, or try to read from gateway config
   const gatewayToken = pluginConfig.gatewayToken || '';
