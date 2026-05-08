@@ -16,13 +16,23 @@ An OpenClaw plugin that provides a standalone ChatGPT-style Web UI for interacti
 
 ## Installation
 
+Recommended (local development): use `--link`.
+
 ```bash
 # Clone repository
 git clone https://github.com/chouzz/openclaw-web-channel.git
+cd openclaw-web-channel
 
-# Install into OpenClaw
-openclaw plugins install ./openclaw-web-channel
+# Install into OpenClaw (linked install, avoids npm copy/install conflicts)
+openclaw plugins install . --link
+
+# Load plugin
+openclaw gateway restart
 ```
+
+### Why `--link`?
+
+In some environments, non-link install (`openclaw plugins install .`) may trigger npm dependency resolution conflicts during staged install. `--link` is the most reliable local setup and was verified for this plugin.
 
 ## Configuration
 
