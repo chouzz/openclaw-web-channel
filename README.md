@@ -1,69 +1,72 @@
 # OpenClaw Web Channel
 
-一个 OpenClaw Channel Plugin，提供独立的 Web UI 界面来访问 OpenClaw。使用 RESTful API + SSE 实现实时通信，适用于受限网络环境。
+An OpenClaw plugin that provides a standalone ChatGPT-style Web UI for interacting with OpenClaw. It uses a REST API plus SSE (Server-Sent Events) for real-time streaming responses.
 
-## 特性
+## Features
 
-- 🌐 独立 Web UI，ChatGPT 风格界面
-- 📡 基于 SSE (Server-Sent Events) 的实时流式通信
-- 🔒 Bearer Token 认证
-- 💬 多会话管理
-- 🔧 工具调用展示
-- 📝 Markdown 渲染 + 代码高亮
-- 🌗 亮色/暗色主题
-- 📱 响应式布局
-- 🚀 前端嵌入 Plugin，无需额外 Web 服务器
+- 🌐 Standalone Web UI with a ChatGPT-like layout
+- 📡 Real-time streaming via SSE
+- 🔒 Bearer token authentication
+- 💬 Multi-session chat management
+- 🔧 Tool invocation visibility
+- 📝 Markdown rendering with code highlighting
+- 🌗 Light and dark themes
+- 📱 Responsive layout
+- 🚀 Frontend bundled and served directly by the plugin
 
-## 安装
+## Installation
 
 ```bash
-# 克隆仓库
+# Clone repository
 git clone https://github.com/chouzz/openclaw-web-channel.git
 
-# 安装到 OpenClaw
+# Install into OpenClaw
 openclaw plugins install ./openclaw-web-channel
 ```
 
-## 配置
+## Configuration
 
-在 OpenClaw 配置中添加：
+Add plugin configuration in OpenClaw:
 
 ```json5
 {
-  channels: {
-    "web-channel": {
-      enabled: true,
-      token: "your-secret-token-here",  // 必填：Web 访问 Token
-      defaultModel: ""  // 可选：默认模型
+  plugins: {
+    entries: {
+      "web-channel": {
+        token: "your-web-access-token",
+        gatewayUrl: "ws://127.0.0.1:18789", // optional
+        gatewayToken: "" // optional if gateway auth is not required
+      }
     }
   }
 }
 ```
 
-## 使用
+## Usage
 
-1. 启动 OpenClaw Gateway
-2. 访问 `http://localhost:3015/plugins/web-channel/`
-3. 输入配置的 Token
-4. 开始聊天！
+1. Start OpenClaw Gateway
+2. Open `http://127.0.0.1:18789/plugins/web-channel/`
+3. Enter your token (if configured)
+4. Start chatting
 
-## 技术栈
+## Tech Stack
 
-- **后端：** OpenClaw Plugin SDK (TypeScript)
-- **前端：** React 19 + Vite + Tailwind CSS v4 + shadcn/ui
-- **通信：** REST API + SSE
-- **状态管理：** Zustand
+- **Backend:** OpenClaw Plugin SDK + TypeScript (ESM)
+- **Frontend:** React 19 + Vite + Tailwind CSS v4
+- **Streaming:** SSE (`text/event-stream`)
+- **Bridge Layer:** Plugin HTTP routes + internal Gateway WebSocket bridge
+- **State:** Zustand
 
-## 开发
+## Development
 
 ```bash
-# 安装依赖
+# Install dependencies
 pnpm install
 
-# 构建前端
+# Build frontend
 cd web && pnpm install && pnpm build
 
-# 构建 Plugin
+# Build plugin (runs frontend + plugin steps)
 pnpm build
 ```
 
