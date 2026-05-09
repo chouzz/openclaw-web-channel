@@ -21,7 +21,20 @@ export class GatewayWS {
 
       ws.on('open', async () => {
         try {
-          await this.sendRequest('connect', { auth: { token: this.token } });
+          await this.sendRequest('connect', {
+            minProtocol: 3,
+            maxProtocol: 3,
+            role: 'operator',
+            client: {
+              id: 'web-channel',
+              displayName: 'OpenClaw Web Channel',
+              mode: 'service',
+              version: '0.1.1',
+              platform: 'node',
+              deviceFamily: 'server',
+            },
+            auth: { token: this.token },
+          });
           this.connectingPromise = null;
           resolve();
         } catch (err) {

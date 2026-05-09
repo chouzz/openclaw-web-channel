@@ -16,32 +16,32 @@ export default definePluginEntry({
     // API Routes - registered with exact match first, then prefix for SSE
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/chat',
-      auth: 'none',
+      auth: 'plugin',
       handler: wrap(handlers.handleChat),
     });
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/sessions',
-      auth: 'none',
+      auth: 'plugin',
       handler: wrap(handlers.handleListSessions),
     });
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/history',
-      auth: 'none',
+      auth: 'plugin',
       handler: wrap(handlers.handleHistory),
     });
 
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/config',
-      auth: 'none',
+      auth: 'plugin',
       handler: wrap(handlers.handleConfig),
     });
 
     // SSE endpoint - prefix match for query params
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/sse',
-      auth: 'none',
+      auth: 'plugin',
       match: 'prefix',
       handler: wrap(handlers.handleSSE),
     });
@@ -51,7 +51,7 @@ export default definePluginEntry({
 
     api.registerHttpRoute({
       path: '/plugins/web-channel',
-      auth: 'none',
+      auth: 'plugin',
       match: 'prefix',
       replaceExisting: true,
       handler: (req: IncomingMessage, res: ServerResponse) => {
