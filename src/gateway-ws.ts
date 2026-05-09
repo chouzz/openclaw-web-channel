@@ -26,9 +26,9 @@ export class GatewayWS {
             maxProtocol: 3,
             role: 'operator',
             client: {
-              id: 'web-channel',
+              id: 'gateway-client',
               displayName: 'OpenClaw Web Channel',
-              mode: 'service',
+              mode: 'backend',
               version: '0.1.1',
               platform: 'node',
               deviceFamily: 'server',
