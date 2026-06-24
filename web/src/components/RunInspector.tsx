@@ -85,6 +85,14 @@ export function RunInspector({ messages, runtimeEvents, streamStatus, currentSes
             <div className="text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">会话元数据</div>
             <div className="mt-3 space-y-2 text-sm text-neutral-600">
               <div className="break-all">{currentSession.id}</div>
+              <div>类型 {currentSession.sessionType === 'external_agent' ? 'External Agent Thread' : 'OpenClaw Native'}</div>
+              {currentSession.externalAgent && (
+                <>
+                  <div>Provider {currentSession.externalAgent.provider}</div>
+                  <div>Thread {currentSession.externalAgent.threadId}</div>
+                  {currentSession.externalAgent.workspace && <div>Workspace {currentSession.externalAgent.workspace}</div>}
+                </>
+              )}
               <div>创建于 {formatDate(currentSession.createdAt)}</div>
               <div>更新于 {formatDate(currentSession.updatedAt)}</div>
               <div>{hasToken ? '当前接口需要授权' : '当前接口未启用授权'}</div>

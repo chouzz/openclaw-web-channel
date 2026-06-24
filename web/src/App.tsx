@@ -3,8 +3,9 @@ import { useChat } from '@/hooks/useChat';
 import { SessionList } from '@/components/SessionList';
 import { ChatMessage } from '@/components/ChatMessage';
 import { ChatInput } from '@/components/ChatInput';
+import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { RunInspector } from '@/components/RunInspector';
-import { Activity, Check, Clock3, PencilLine, Sparkles, X } from 'lucide-react';
+import { Activity, Cable, Check, Clock3, PencilLine, Sparkles, X } from 'lucide-react';
 import { useRef, useEffect, useState } from 'react';
 import type { ChatMessage as ChatMessageItem, SessionSummary } from '@/types/chat';
 
@@ -18,6 +19,7 @@ function App() {
   const { sendMessage, createSession, updateSessionName, loadSessions } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const currentTitle = formatSessionTitle(currentSessionId, sessions);
   const currentSession = sessions.find((session) => session.id === currentSessionId) || null;
@@ -45,7 +47,10 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f4f2ec] text-neutral-900">
-      <SessionList onCreateSession={createSession} onRefreshSessions={loadSessions} />
+      <SessionList
+        onOpenCreateDialog={() => setIsCreatingSession(true)}
+        onRefreshSessions={loadSessions}
+      />
       <main className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex h-20 items-center justify-between border-b border-black/6 px-8">
           <div>
@@ -76,6 +81,12 @@ function App() {
             ) : (
               <div className="mt-1 flex items-center gap-3">
                 <h1 className="text-2xl font-semibold">{currentTitle}</h1>
+                {currentSession?.sessionType === 'external_agent' && (
+                  <div className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                    <Cable size={12} />
+                    <span>{currentSession.externalAgent?.provider || 'external'}</span>
+                  </div>
+                )}
                 {currentSessionId && (
                   <button
                     onClick={() => setIsEditingTitle(true)}
@@ -143,6 +154,8 @@ function App() {
             sessionId={currentSessionId}
             streamStatus={streamStatus}
             messageCount={messages.length}
+            sessionType={currentSession?.sessionType || 'native'}
+            providerLabel={currentSession?.externalAgent?.provider}
           />
         )}
       </main>
@@ -152,6 +165,11 @@ function App() {
         streamStatus={streamStatus}
         currentSession={currentSession}
         hasToken={hasToken}
+      />
+      <NewSessionDialog
+        open={isCreatingSession}
+        onClose={() => setIsCreatingSession(false)}
+        onCreateSession={createSession}
       />
     </div>
   );

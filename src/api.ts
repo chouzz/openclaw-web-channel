@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { addConnection, broadcast } from './sse.js';
 import { getConfig } from './config.js';
-import type { ChatMessage } from './types.js';
+import type { ChatMessage, ExternalAgentBinding, SessionType } from './types.js';
 
 const activeRuns = new Set<string>();
 
@@ -39,6 +39,10 @@ function requireAuth(req: IncomingMessage, res: ServerResponse, api: any): boole
 
 function getSessionKey(sessionId: string): string {
   return sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
+}
+
+function generateSessionId() {
+  return `session-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 function getRuntimeConfig(api: any): any {
@@ -162,6 +166,7 @@ function normalizeSession(entry: any) {
   const plainId = typeof sessionKey === 'string' && sessionKey.startsWith('web:')
     ? sessionKey.slice(4)
     : sessionKey;
+  const sessionMeta = entry?.webChannelMeta || {};
 
   return {
     ...entry,
@@ -170,6 +175,37 @@ function normalizeSession(entry: any) {
     name: entry?.name || entry?.title || plainId || sessionKey,
     createdAt: entry?.createdAt || entry?.created_at || Date.now(),
     updatedAt: entry?.updatedAt || entry?.updated_at || entry?.lastUpdatedAt || entry?.createdAt || Date.now(),
+    sessionType: sessionMeta.sessionType || 'native',
+    externalAgent: sessionMeta.externalAgent,
+  };
+}
+
+function normalizeExternalAgentBinding(value: any): ExternalAgentBinding | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+
+  const provider = typeof value.provider === 'string' ? value.provider : 'custom';
+  const threadId = typeof value.threadId === 'string' ? value.threadId.trim() : '';
+  if (!threadId) return undefined;
+
+  return {
+    provider,
+    threadId,
+    workspace: typeof value.workspace === 'string' ? value.workspace.trim() : undefined,
+    instanceLabel: typeof value.instanceLabel === 'string' ? value.instanceLabel.trim() : undefined,
+    launchMode: value.launchMode === 'managed' ? 'managed' : 'attach',
+    transportStatus: value.transportStatus === 'connected'
+      ? 'connected'
+      : value.transportStatus === 'configured'
+        ? 'configured'
+        : 'disconnected',
+    endpoint: typeof value.endpoint === 'string' ? value.endpoint.trim() : undefined,
+  };
+}
+
+function buildSessionMeta(sessionType: SessionType, externalAgent?: ExternalAgentBinding) {
+  return {
+    sessionType,
+    externalAgent: sessionType === 'external_agent' ? externalAgent : undefined,
   };
 }
 
@@ -190,6 +226,17 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
 
     sessionId = rawSessionId;
     const sessionKey = getSessionKey(sessionId);
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const agentId = resolveAgentId(api, cfg);
+    const existingEntry = await runtime.session.getSessionEntry({ agentId, sessionKey }).catch(() => null);
+    const existingSession = existingEntry ? normalizeSession(existingEntry) : null;
+
+    if (existingSession?.sessionType === 'external_agent') {
+      return sendJson(res, 409, {
+        error: 'This session is bound to an external agent thread. Transport execution is not connected yet.',
+      });
+    }
 
     if (activeRuns.has(sessionKey)) {
       broadcast(sessionId, 'error', { message: 'A run is already in progress for this session' });
@@ -198,8 +245,6 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
 
     activeRuns.add(sessionKey);
 
-    const cfg = getRuntimeConfig(api);
-    const runtime = getAgentRuntime(api);
     const { agentDir, workspaceDir, sessionFile } = resolveSessionFile(api, cfg, sessionKey);
     const timeoutMs = runtime.resolveAgentTimeoutMs?.(cfg) || 120000;
     const runId = crypto.randomUUID();
@@ -207,7 +252,7 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
     const result = await runtime.runEmbeddedAgent({
       sessionId: sessionKey,
       sessionKey,
-      agentId: resolveAgentId(api, cfg),
+      agentId,
       messageChannel: 'web-channel',
       sessionFile,
       workspaceDir,
@@ -345,7 +390,46 @@ export async function handleConfig(req: IncomingMessage, res: ServerResponse, ap
   const config = getConfig(api);
   return sendJson(res, 200, {
     hasToken: !!config.webToken,
+    supportedExternalProviders: ['acpx', 'codex', 'claude-code', 'qwen-code', 'custom'],
   });
+}
+
+export async function handleCreateSession(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!requireAuth(req, res, api)) return;
+
+  try {
+    const bodyStr = await readBody(req);
+    const body = JSON.parse(bodyStr || '{}');
+    const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : generateSessionId();
+    const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : '新对话';
+    const sessionType: SessionType = body.sessionType === 'external_agent' ? 'external_agent' : 'native';
+    const externalAgent = normalizeExternalAgentBinding(body.externalAgent);
+
+    if (sessionType === 'external_agent' && !externalAgent) {
+      return sendJson(res, 400, { error: 'Missing valid externalAgent binding for external_agent session' });
+    }
+
+    const sessionKey = getSessionKey(sessionId);
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const agentId = resolveAgentId(api, cfg);
+    const now = Date.now();
+    const existingEntry = await runtime.session.getSessionEntry({ agentId, sessionKey }).catch(() => null);
+    const update = {
+      ...(existingEntry || {}),
+      name,
+      title: name,
+      createdAt: existingEntry?.createdAt || existingEntry?.created_at || now,
+      updatedAt: now,
+      webChannelMeta: buildSessionMeta(sessionType, externalAgent),
+    };
+
+    const result = await runtime.session.upsertSessionEntry({ agentId, sessionKey, update });
+    return sendJson(res, 200, normalizeSession(result || update));
+  } catch (error: any) {
+    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
+  }
 }
 
 export async function handleUpdateSession(req: IncomingMessage, res: ServerResponse, api: any) {
@@ -354,10 +438,10 @@ export async function handleUpdateSession(req: IncomingMessage, res: ServerRespo
 
   try {
     const bodyStr = await readBody(req);
-    const { sessionId, name } = JSON.parse(bodyStr);
+    const { sessionId, name, sessionType, externalAgent } = JSON.parse(bodyStr);
 
-    if (!sessionId || !name || typeof name !== 'string') {
-      return sendJson(res, 400, { error: 'Missing sessionId or name' });
+    if (!sessionId) {
+      return sendJson(res, 400, { error: 'Missing sessionId' });
     }
 
     const sessionKey = getSessionKey(sessionId);
@@ -366,11 +450,23 @@ export async function handleUpdateSession(req: IncomingMessage, res: ServerRespo
     const agentId = resolveAgentId(api, cfg);
 
     const existingEntry = await runtime.session.getSessionEntry({ agentId, sessionKey }).catch(() => null);
+    const nextSessionType: SessionType = sessionType === 'external_agent'
+      ? 'external_agent'
+      : (existingEntry?.webChannelMeta?.sessionType || 'native');
+    const nextExternalAgent = externalAgent !== undefined
+      ? normalizeExternalAgentBinding(externalAgent)
+      : existingEntry?.webChannelMeta?.externalAgent;
+
+    if (nextSessionType === 'external_agent' && !nextExternalAgent) {
+      return sendJson(res, 400, { error: 'Missing valid externalAgent binding for external_agent session' });
+    }
+
     const update = {
       ...(existingEntry || {}),
-      name,
-      title: name,
+      name: typeof name === 'string' && name.trim() ? name.trim() : existingEntry?.name || existingEntry?.title || sessionId,
+      title: typeof name === 'string' && name.trim() ? name.trim() : existingEntry?.title || existingEntry?.name || sessionId,
       updatedAt: Date.now(),
+      webChannelMeta: buildSessionMeta(nextSessionType, nextExternalAgent),
     };
 
     const result = runtime.session.patchSessionEntry

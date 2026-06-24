@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FolderOpen, MessageSquare, Plus, RefreshCcw, Search, ShieldCheck, Sparkles } from 'lucide-react';
+import { Bot, Cable, FolderOpen, MessageSquare, Plus, RefreshCcw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import type { SessionSummary } from '@/types/chat';
 
@@ -13,11 +13,11 @@ function formatRelativeDate(timestamp: number) {
 }
 
 interface SessionListProps {
-  onCreateSession: () => void;
+  onOpenCreateDialog: () => void;
   onRefreshSessions: () => void;
 }
 
-export function SessionList({ onCreateSession, onRefreshSessions }: SessionListProps) {
+export function SessionList({ onOpenCreateDialog, onRefreshSessions }: SessionListProps) {
   const [query, setQuery] = useState('');
   const { sessions, currentSessionId, setCurrentSessionId, hasToken } = useChatStore();
 
@@ -37,7 +37,7 @@ export function SessionList({ onCreateSession, onRefreshSessions }: SessionListP
     <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-black/6 bg-[#f7f6f3]">
       <div className="border-b border-black/6 px-5 py-5">
         <button
-          onClick={onCreateSession}
+          onClick={onOpenCreateDialog}
           className="flex w-full items-center gap-3 rounded-2xl border border-black/8 bg-white px-4 py-3 text-left text-sm font-medium text-neutral-800 shadow-[0_1px_0_rgba(0,0,0,0.04)] transition hover:border-black/12 hover:bg-neutral-50"
         >
           <Plus size={16} />
@@ -105,8 +105,22 @@ export function SessionList({ onCreateSession, onRefreshSessions }: SessionListP
                 >
                   <MessageSquare size={16} className="mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{session.name}</div>
-                    <div className="mt-1 truncate text-xs text-neutral-400">{session.id}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-medium">{session.name}</div>
+                      <div className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        session.sessionType === 'external_agent'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-neutral-100 text-neutral-600'
+                      }`}>
+                        {session.sessionType === 'external_agent' ? <Cable size={10} /> : <Bot size={10} />}
+                        <span>{session.sessionType === 'external_agent' ? (session.externalAgent?.provider || 'external') : 'native'}</span>
+                      </div>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-neutral-400">
+                      {session.sessionType === 'external_agent'
+                        ? session.externalAgent?.threadId || session.id
+                        : session.id}
+                    </div>
                   </div>
                 </button>
               ))}

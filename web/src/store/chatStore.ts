@@ -34,11 +34,11 @@ export const useChatStore = create<ChatState>((set) => ({
   streamStatus: 'idle',
   runtimeEvents: [],
   hasToken: false,
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) => set({ sessions: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
   upsertSession: (session) => set((state) => {
     const existing = state.sessions.find((item) => item.id === session.id);
     if (!existing) {
-      return { sessions: [session, ...state.sessions] };
+      return { sessions: [session, ...state.sessions].sort((a, b) => b.updatedAt - a.updatedAt) };
     }
 
     return {

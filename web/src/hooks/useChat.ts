@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useRef } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { apiClient } from '@/api/client';
 import { normalizeToolResult } from '@/lib/toolResult';
-import type { ChatMessage, SessionSummary, ToolResultItem } from '@/types/chat';
+import type { ChatMessage, CreateSessionInput, SessionSummary, ToolResultItem } from '@/types/chat';
 
 export function useChat() {
   const {
@@ -39,6 +39,8 @@ export function useChat() {
     name: session.name || session.id || session.sessionKey,
     createdAt: Number(session.createdAt || Date.now()),
     updatedAt: Number(session.updatedAt || session.createdAt || Date.now()),
+    sessionType: session.sessionType === 'external_agent' ? 'external_agent' : 'native',
+    externalAgent: session.externalAgent,
   });
 
   const loadSessions = useEffectEvent(async () => {
@@ -236,6 +238,7 @@ export function useChat() {
       name: content.slice(0, 32) || currentSessionId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      sessionType: 'native' as const,
     };
     upsertSession({ ...nextSession, updatedAt: Date.now() });
 
@@ -260,15 +263,20 @@ export function useChat() {
     }
   };
 
-  const createSession = () => {
-    const sessionId = `session-${Date.now()}`;
-    upsertSession({
-      id: sessionId,
-      name: '新对话',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+  const createSession = async (input: CreateSessionInput) => {
+    const payload = {
+      name: input.name.trim() || '新对话',
+      sessionType: input.sessionType,
+      externalAgent: input.externalAgent,
+    };
+
+    const createdSession = await apiClient.fetch('/plugins/web-channel/api/session/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
-    useChatStore.getState().setCurrentSessionId(sessionId);
+    const normalizedSession = mapSession(createdSession);
+    upsertSession(normalizedSession);
+    useChatStore.getState().setCurrentSessionId(normalizedSession.id);
   };
 
   const updateSessionName = async (sessionId: string, name: string) => {
