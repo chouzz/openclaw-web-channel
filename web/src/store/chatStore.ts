@@ -1,35 +1,70 @@
 import { create } from 'zustand';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
+import type { ChatMessage, RuntimeEventItem, SessionSummary, ToolResultItem } from '@/types/chat';
 
 interface ChatState {
+  sessions: SessionSummary[];
   currentSessionId: string | null;
-  messages: Message[];
+  messages: ChatMessage[];
   isLoading: boolean;
+  streamStatus: 'idle' | 'streaming' | 'error';
+  runtimeEvents: RuntimeEventItem[];
+  setSessions: (sessions: SessionSummary[]) => void;
+  upsertSession: (session: SessionSummary) => void;
   setCurrentSessionId: (id: string | null) => void;
-  setMessages: (messages: Message[]) => void;
-  addMessage: (message: Message) => void;
-  updateLastMessage: (content: string) => void;
+  setMessages: (messages: ChatMessage[]) => void;
+  addMessage: (message: ChatMessage) => void;
+  replaceMessage: (messageId: string, patch: Partial<ChatMessage>) => void;
+  updateAssistantMessage: (messageId: string, content: string) => void;
+  addToolResultToMessage: (messageId: string, result: ToolResultItem) => void;
   setIsLoading: (isLoading: boolean) => void;
+  setStreamStatus: (status: ChatState['streamStatus']) => void;
+  resetRuntimeEvents: () => void;
+  addRuntimeEvent: (event: RuntimeEventItem) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
+  sessions: [],
   currentSessionId: null,
   messages: [],
   isLoading: false,
-  setCurrentSessionId: (id) => set({ currentSessionId: id, messages: [] }),
+  streamStatus: 'idle',
+  runtimeEvents: [],
+  setSessions: (sessions) => set({ sessions }),
+  upsertSession: (session) => set((state) => {
+    const existing = state.sessions.find((item) => item.id === session.id);
+    if (!existing) {
+      return { sessions: [session, ...state.sessions] };
+    }
+
+    return {
+      sessions: state.sessions
+        .map((item) => (item.id === session.id ? { ...item, ...session } : item))
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    };
+  }),
+  setCurrentSessionId: (id) => set({ currentSessionId: id, messages: [], runtimeEvents: [], streamStatus: 'idle' }),
   setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
-  updateLastMessage: (content) => set((state) => {
-    const newMessages = [...state.messages];
-    if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-      newMessages[newMessages.length - 1].content = content;
-    }
-    return { messages: newMessages };
-  }),
+  replaceMessage: (messageId, patch) => set((state) => ({
+    messages: state.messages.map((message) => (
+      message.id === messageId ? { ...message, ...patch } : message
+    )),
+  })),
+  updateAssistantMessage: (messageId, content) => set((state) => ({
+    messages: state.messages.map((message) => (
+      message.id === messageId ? { ...message, content } : message
+    )),
+  })),
+  addToolResultToMessage: (messageId, result) => set((state) => ({
+    messages: state.messages.map((message) => (
+      message.id === messageId
+        ? { ...message, toolResults: [...(message.toolResults || []), result] }
+        : message
+    )),
+  })),
   setIsLoading: (isLoading) => set({ isLoading }),
+  setStreamStatus: (streamStatus) => set({ streamStatus }),
+  resetRuntimeEvents: () => set({ runtimeEvents: [] }),
+  addRuntimeEvent: (event) => set((state) => ({ runtimeEvents: [...state.runtimeEvents, event] })),
 }));

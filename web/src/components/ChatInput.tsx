@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Lock, MessageSquareText, Plus, Radio } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  sessionId: string;
+  streamStatus: 'idle' | 'streaming' | 'error';
+  messageCount: number;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, sessionId, streamStatus, messageCount }: ChatInputProps) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -33,27 +36,51 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   }, [input]);
 
   return (
-    <div className="absolute bottom-0 left-0 w-full p-4 md:p-8 bg-gradient-to-t from-white dark:from-zinc-900 to-transparent">
+    <div className="sticky bottom-0 left-0 w-full bg-gradient-to-t from-[#f4f2ec] via-[#f4f2ec] to-transparent px-6 pb-6 pt-10">
       <form
         onSubmit={handleSubmit}
-        className="max-w-3xl mx-auto relative flex items-center bg-white dark:bg-zinc-800 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm overflow-hidden"
+        className="mx-auto max-w-4xl overflow-hidden rounded-[30px] border border-black/8 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]"
       >
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Message OpenClaw..."
-          className="w-full p-4 pr-12 resize-none bg-transparent outline-none max-h-60"
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || disabled}
-          className="absolute right-3 p-2 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-        >
-          <ArrowUp size={20} />
-        </button>
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="给 OpenClaw 一个明确的任务，或者继续当前会话"
+            className="max-h-72 w-full resize-none bg-transparent px-6 pb-6 pt-6 text-[15px] leading-7 text-neutral-800 outline-none placeholder:text-neutral-300"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || disabled}
+            className="absolute bottom-5 right-5 rounded-2xl bg-neutral-900 p-3 text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ArrowUp size={18} />
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-black/6 bg-[#fbfaf7] px-5 py-4 text-sm text-neutral-500">
+          <div className="flex items-center gap-2">
+            <Plus size={15} />
+            <span>扩展</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Lock size={15} />
+            <span>受保护会话</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Radio size={15} />
+            <span>{streamStatus === 'streaming' ? '运行中' : streamStatus === 'error' ? '异常' : '待命'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <MessageSquareText size={15} />
+            <span>{messageCount} 条消息</span>
+          </div>
+          <div className="ml-auto truncate text-xs text-neutral-400">
+            {sessionId}
+          </div>
+        </div>
       </form>
     </div>
   );

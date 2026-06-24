@@ -1,82 +1,115 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Trash2 } from 'lucide-react';
-import { apiClient } from '@/api/client';
+import { useMemo, useState } from 'react';
+import { FolderOpen, MessageSquare, Plus, Search, Sparkles } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
+import type { SessionSummary } from '@/types/chat';
 
-export function SessionList() {
-  const [sessions, setSessions] = useState<any[]>([]);
-  const { currentSessionId, setCurrentSessionId } = useChatStore();
+function formatRelativeDate(timestamp: number) {
+  const diff = Date.now() - timestamp;
+  const day = 24 * 60 * 60 * 1000;
+  if (diff < day) return '今天';
+  if (diff < day * 2) return '昨天';
+  if (diff < day * 7) return '本周';
+  return '更早';
+}
 
-  const loadSessions = useCallback(async () => {
-    try {
-      const data = await apiClient.fetch('/plugins/web-channel/api/sessions');
-      setSessions(data);
-      if (data.length > 0 && !currentSessionId) {
-        const firstSessionId = data[0].sessionKey || data[0].id;
-        setCurrentSessionId(firstSessionId);
-      }
-    } catch (err) {
-      console.error('Failed to load sessions', err);
-    }
-  }, [currentSessionId, setCurrentSessionId]);
+interface SessionListProps {
+  onCreateSession: () => void;
+}
 
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+export function SessionList({ onCreateSession }: SessionListProps) {
+  const [query, setQuery] = useState('');
+  const { sessions, currentSessionId, setCurrentSessionId } = useChatStore();
 
-  const createSession = async () => {
-    // OpenClaw sessions are usually lazy-created on first message or manually.
-    // Since we bridge to Gateway WS, we can just pick a new random sessionId.
-    const newId = `session-${Date.now()}`;
-    setCurrentSessionId(newId);
-  };
+  const filteredSessions = useMemo(() => sessions.filter((session) => (
+    session.name.toLowerCase().includes(query.toLowerCase()) ||
+    session.id.toLowerCase().includes(query.toLowerCase())
+  )), [query, sessions]);
 
-  const deleteSession = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    // Delete might not be directly supported via the bridge if sessions are transient,
-    // but we can try to implement it if needed. For now, just remove from UI.
-    setSessions(sessions.filter((s) => (s.sessionKey || s.id) !== id));
-    if (currentSessionId === id) {
-      setCurrentSessionId(null);
-    }
-  };
+  const groupedSessions = useMemo(() => filteredSessions.reduce<Record<string, SessionSummary[]>>((groups, session) => {
+    const key = formatRelativeDate(session.updatedAt);
+    groups[key] = groups[key] || [];
+    groups[key].push(session);
+    return groups;
+  }, {}), [filteredSessions]);
 
   return (
-    <div className="w-64 flex flex-col h-full bg-gray-100 dark:bg-zinc-950 border-r border-gray-200 dark:border-zinc-800">
-      <div className="p-4">
+    <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-black/6 bg-[#f7f6f3]">
+      <div className="border-b border-black/6 px-5 py-5">
         <button
-          onClick={createSession}
-          className="flex items-center gap-2 w-full p-3 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-900 transition-colors"
+          onClick={onCreateSession}
+          className="flex w-full items-center gap-3 rounded-2xl border border-black/8 bg-white px-4 py-3 text-left text-sm font-medium text-neutral-800 shadow-[0_1px_0_rgba(0,0,0,0.04)] transition hover:border-black/12 hover:bg-neutral-50"
         >
-          <Plus size={18} />
-          <span>New chat</span>
+          <Plus size={16} />
+          <span>新对话</span>
         </button>
+
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-black/8 bg-white px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+          <Search size={16} className="text-neutral-400" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索会话"
+            className="w-full bg-transparent text-sm text-neutral-700 outline-none placeholder:text-neutral-400"
+          />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-2">
-        {sessions.map((session) => (
-          <div
-            key={session.sessionKey || session.id}
-            onClick={() => setCurrentSessionId(session.sessionKey || session.id)}
-            className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors mb-1 ${
-              currentSessionId === (session.sessionKey || session.id)
-                ? 'bg-gray-200 dark:bg-zinc-900'
-                : 'hover:bg-gray-200 dark:hover:bg-zinc-900'
-            }`}
-          >
-            <div className="flex items-center gap-3 truncate">
-              <MessageSquare size={16} />
-              <span className="truncate text-sm">{session.name || session.sessionKey || session.id}</span>
+
+      <div className="border-b border-black/6 px-5 py-4">
+        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
+          <Sparkles size={14} />
+          Workspace
+        </div>
+        <div className="rounded-2xl bg-white px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+          <div className="flex items-center gap-3 text-sm font-medium text-neutral-800">
+            <FolderOpen size={16} className="text-neutral-500" />
+            <span>OpenClaw Web Channel</span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-neutral-500">
+            当前展示真实的 Web 会话、历史记录和流式消息。
+          </p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
+          会话
+        </div>
+
+        {Object.entries(groupedSessions).map(([groupName, groupSessions]) => (
+          <div key={groupName} className="mb-5">
+            <div className="mb-2 px-2 text-xs font-medium text-neutral-400">{groupName}</div>
+            <div className="space-y-1">
+              {groupSessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => setCurrentSessionId(session.id)}
+                  className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${
+                    currentSessionId === session.id
+                      ? 'bg-white text-neutral-900 shadow-[0_1px_0_rgba(0,0,0,0.05)]'
+                      : 'text-neutral-600 hover:bg-white/80'
+                  }`}
+                >
+                  <MessageSquare size={16} className="mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{session.name}</div>
+                    <div className="mt-1 truncate text-xs text-neutral-400">{session.id}</div>
+                  </div>
+                </button>
+              ))}
             </div>
-            {currentSessionId === (session.sessionKey || session.id) && (
-              <Trash2
-                size={14}
-                className="text-gray-400 hover:text-red-500"
-                onClick={(e) => deleteSession(session.sessionKey || session.id, e)}
-              />
-            )}
           </div>
         ))}
+
+        {filteredSessions.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-black/10 px-4 py-6 text-sm text-neutral-400">
+            没有匹配的会话。
+          </div>
+        )}
       </div>
-    </div>
+
+      <div className="border-t border-black/6 px-5 py-4 text-xs text-neutral-400">
+        共 {sessions.length} 个真实会话
+      </div>
+    </aside>
   );
 }

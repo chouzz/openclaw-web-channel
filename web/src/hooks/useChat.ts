@@ -1,77 +1,147 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { apiClient } from '@/api/client';
+import type { ChatMessage, SessionSummary, ToolResultItem } from '@/types/chat';
 
 export function useChat() {
-  const { currentSessionId, addMessage, updateLastMessage, setIsLoading } = useChatStore();
+  const {
+    currentSessionId,
+    setSessions,
+    sessions,
+    upsertSession,
+    setMessages,
+    addMessage,
+    updateAssistantMessage,
+    addToolResultToMessage,
+    setIsLoading,
+    setStreamStatus,
+    resetRuntimeEvents,
+    addRuntimeEvent,
+  } = useChatStore();
   const eventSourceRef = useRef<EventSource | null>(null);
+  const activeAssistantIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (!currentSessionId) return;
+  const mapHistoryMessage = (message: any): ChatMessage => ({
+    id: message.id || crypto.randomUUID(),
+    role: message.role,
+    content: message.text || (Array.isArray(message.content) ? message.content.map((item: any) => item.text || '').join('') : message.content) || '',
+    createdAt: Date.now(),
+    toolResults: Array.isArray(message.toolResults)
+      ? message.toolResults.map((result: any) => ({
+          id: result.id || crypto.randomUUID(),
+          output: result.output,
+        }))
+      : undefined,
+  });
 
-    // Load history when session changes
-    const loadHistory = async () => {
-      try {
-        const history = await apiClient.fetch(`/plugins/web-channel/api/history?sessionId=${currentSessionId}`);
-        if (history && Array.isArray(history)) {
-          const messages = history.map((m: any) => ({
-            id: m.id || Math.random().toString(),
-            role: m.role,
-            content: m.text || (Array.isArray(m.content) ? m.content.map((c: any) => c.text || '').join('') : m.content) || ''
-          }));
-          useChatStore.getState().setMessages(messages);
-        }
-      } catch (err) {
-        console.error('Failed to load history', err);
+  const mapSession = (session: any): SessionSummary => ({
+    id: session.id || session.sessionKey,
+    name: session.name || session.id || session.sessionKey,
+    createdAt: Number(session.createdAt || Date.now()),
+    updatedAt: Number(session.updatedAt || session.createdAt || Date.now()),
+  });
+
+  const loadSessions = useEffectEvent(async () => {
+    try {
+      const data = await apiClient.fetch('/plugins/web-channel/api/sessions');
+      const nextSessions = Array.isArray(data) ? data.map(mapSession).sort((a, b) => b.updatedAt - a.updatedAt) : [];
+      setSessions(nextSessions);
+      if (!currentSessionId && nextSessions.length > 0) {
+        useChatStore.getState().setCurrentSessionId(nextSessions[0].id);
       }
-    };
+    } catch (err) {
+      console.error('Failed to load sessions', err);
+    }
+  });
 
-    loadHistory();
+  const loadHistory = useEffectEvent(async (sessionId: string) => {
+    try {
+      const history = await apiClient.fetch(`/plugins/web-channel/api/history?sessionId=${sessionId}`);
+      if (Array.isArray(history)) {
+        setMessages(history.map(mapHistoryMessage));
+      }
+    } catch (err) {
+      console.error('Failed to load history', err);
+    }
+  });
 
+  const ensureAssistantMessage = useEffectEvent(() => {
+    if (activeAssistantIdRef.current) return activeAssistantIdRef.current;
+
+    const assistantId = crypto.randomUUID();
+    activeAssistantIdRef.current = assistantId;
+    addMessage({
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      createdAt: Date.now(),
+    });
+    return assistantId;
+  });
+
+  const attachEventSource = useEffectEvent((sessionId: string) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
-    const es = new EventSource(apiClient.getSSEUrl(currentSessionId));
+    const es = new EventSource(apiClient.getSSEUrl(sessionId));
     eventSourceRef.current = es;
-
-    let assistantContent = '';
 
     es.addEventListener('agent', (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.text) {
-          // onPartialReply sends cumulative text, not delta
-          assistantContent = payload.text;
-          updateLastMessage(assistantContent);
-        } else if (payload.content) {
-          // Handle full content replacement if needed
-          const textContent = Array.isArray(payload.content)
-            ? payload.content.map((c: any) => c.text || '').join('')
-            : (typeof payload.content === 'string' ? payload.content : '');
+        const assistantId = ensureAssistantMessage();
 
-          if (textContent) {
-            assistantContent = textContent;
-            updateLastMessage(assistantContent);
-          }
+        if (payload.text) {
+          updateAssistantMessage(assistantId, payload.text);
+          setStreamStatus('streaming');
+        }
+
+        if (payload.status) {
+          addRuntimeEvent({
+            id: crypto.randomUUID(),
+            kind: 'status',
+            label: String(payload.status),
+            timestamp: Date.now(),
+            payload,
+          });
         }
       } catch {
         // Ignore malformed SSE data
       }
     });
 
+    es.addEventListener('tool_result', (event) => {
+      try {
+        const payload = JSON.parse(event.data) as ToolResultItem;
+        const assistantId = ensureAssistantMessage();
+        addToolResultToMessage(assistantId, {
+          id: payload.id || crypto.randomUUID(),
+          output: payload.output,
+        });
+        addRuntimeEvent({
+          id: crypto.randomUUID(),
+          kind: 'tool_result',
+          label: 'Tool result',
+          timestamp: Date.now(),
+          payload,
+        });
+      } catch {
+        // Ignore malformed tool result data
+      }
+    });
+
     es.addEventListener('error', (event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data);
-        if (payload.message) {
-          const errorMsg = `[Error] ${payload.message}`;
-          if (assistantContent) {
-            assistantContent += '\n\n' + errorMsg;
-            updateLastMessage(assistantContent);
-          } else {
-            addMessage({ id: Date.now().toString(), role: 'assistant', content: errorMsg });
-          }
-        }
+        addRuntimeEvent({
+          id: crypto.randomUUID(),
+          kind: 'error',
+          label: payload.message || 'Stream error',
+          timestamp: Date.now(),
+          payload,
+        });
+        setStreamStatus('error');
       } catch {
         // Ignore malformed error data
       }
@@ -79,26 +149,58 @@ export function useChat() {
 
     es.addEventListener('done', () => {
       setIsLoading(false);
-      assistantContent = '';
+      setStreamStatus('idle');
+      activeAssistantIdRef.current = null;
     });
 
     es.onerror = (err) => {
       console.error('SSE Error:', err);
       es.close();
       setIsLoading(false);
+      setStreamStatus('error');
+      activeAssistantIdRef.current = null;
     };
+  });
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+
+    activeAssistantIdRef.current = null;
+    resetRuntimeEvents();
+    loadHistory(currentSessionId);
+    attachEventSource(currentSessionId);
 
     return () => {
-      es.close();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
     };
-  }, [currentSessionId, setIsLoading, updateLastMessage]);
+  }, [attachEventSource, currentSessionId, loadHistory, resetRuntimeEvents]);
 
   const sendMessage = async (content: string) => {
     if (!currentSessionId) return;
 
-    addMessage({ id: Date.now().toString(), role: 'user', content });
-    addMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: '' });
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
+    activeAssistantIdRef.current = assistantMessageId;
+
+    addMessage({ id: userMessageId, role: 'user', content, createdAt: Date.now() });
+    addMessage({ id: assistantMessageId, role: 'assistant', content: '', createdAt: Date.now() });
     setIsLoading(true);
+    setStreamStatus('streaming');
+    resetRuntimeEvents();
+
+    const nextSession = sessions.find((session) => session.id === currentSessionId) || {
+      id: currentSessionId,
+      name: content.slice(0, 32) || currentSessionId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    upsertSession({ ...nextSession, updatedAt: Date.now() });
 
     try {
       await apiClient.fetch('/plugins/web-channel/api/chat', {
@@ -107,10 +209,30 @@ export function useChat() {
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to send message';
-      addMessage({ id: Date.now().toString(), role: 'assistant', content: `[Error] ${msg}` });
+      updateAssistantMessage(assistantMessageId, `[Error] ${msg}`);
+      addRuntimeEvent({
+        id: crypto.randomUUID(),
+        kind: 'error',
+        label: msg,
+        timestamp: Date.now(),
+        payload: { message: msg },
+      });
       setIsLoading(false);
+      setStreamStatus('error');
+      activeAssistantIdRef.current = null;
     }
   };
 
-  return { sendMessage };
+  const createSession = () => {
+    const sessionId = `session-${Date.now()}`;
+    upsertSession({
+      id: sessionId,
+      name: '新对话',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    useChatStore.getState().setCurrentSessionId(sessionId);
+  };
+
+  return { sendMessage, createSession, loadSessions };
 }
