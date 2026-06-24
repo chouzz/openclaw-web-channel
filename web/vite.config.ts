@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+import tailwindcss from '@tailwindcss/vite';
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: '/plugins/web-channel/',
   build: {
     outDir: '../dist/web',
