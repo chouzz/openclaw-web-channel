@@ -1,12 +1,16 @@
 import { Bot, Cable, Plus, X } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
-import type { CreateSessionInput, ExternalAgentProvider, SessionType } from '@/types/chat';
+import type { CreateSessionInput, ExternalAgentProvider, SessionSummary, SessionType } from '@/types/chat';
 
 interface NewSessionDialogProps {
   open: boolean;
   onClose: () => void;
-  onCreateSession: (input: CreateSessionInput) => Promise<void>;
+  onSubmitSession: (input: CreateSessionInput) => Promise<void>;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  initialSession?: SessionSummary | null;
 }
 
 const providerOptions: Array<{ value: ExternalAgentProvider; label: string }> = [
@@ -17,29 +21,50 @@ const providerOptions: Array<{ value: ExternalAgentProvider; label: string }> = 
   { value: 'custom', label: 'Custom' },
 ];
 
-export function NewSessionDialog({ open, onClose, onCreateSession }: NewSessionDialogProps) {
-  const [sessionType, setSessionType] = useState<SessionType>('native');
-  const [name, setName] = useState('');
-  const [provider, setProvider] = useState<ExternalAgentProvider>('acpx');
-  const [threadId, setThreadId] = useState('');
-  const [workspace, setWorkspace] = useState('');
-  const [instanceLabel, setInstanceLabel] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [launchMode, setLaunchMode] = useState<'managed' | 'attach'>('attach');
+export function NewSessionDialog({
+  open,
+  onClose,
+  onSubmitSession,
+  title = '创建一个新的 Agent Thread 会话',
+  description = 'Native 会话直接运行在 OpenClaw 中；External Thread 会话用于绑定 ACPX、Codex、Claude Code 等外部 Agent 线程。',
+  submitLabel = '创建会话',
+  initialSession = null,
+}: NewSessionDialogProps) {
+  const [sessionType, setSessionType] = useState<SessionType>(initialSession?.sessionType || 'native');
+  const [name, setName] = useState(initialSession?.name || '');
+  const [provider, setProvider] = useState<ExternalAgentProvider>(initialSession?.externalAgent?.provider || 'acpx');
+  const [threadId, setThreadId] = useState(initialSession?.externalAgent?.threadId || '');
+  const [workspace, setWorkspace] = useState(initialSession?.externalAgent?.workspace || '');
+  const [instanceLabel, setInstanceLabel] = useState(initialSession?.externalAgent?.instanceLabel || '');
+  const [endpoint, setEndpoint] = useState(initialSession?.externalAgent?.endpoint || '');
+  const [launchMode, setLaunchMode] = useState<'managed' | 'attach'>(initialSession?.externalAgent?.launchMode || 'attach');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setSessionType(initialSession?.sessionType || 'native');
+    setName(initialSession?.name || '');
+    setProvider(initialSession?.externalAgent?.provider || 'acpx');
+    setThreadId(initialSession?.externalAgent?.threadId || '');
+    setWorkspace(initialSession?.externalAgent?.workspace || '');
+    setInstanceLabel(initialSession?.externalAgent?.instanceLabel || '');
+    setEndpoint(initialSession?.externalAgent?.endpoint || '');
+    setLaunchMode(initialSession?.externalAgent?.launchMode || 'attach');
+    setError('');
+    setIsSubmitting(false);
+  }, [initialSession, open]);
 
   if (!open) return null;
 
   const reset = () => {
-    setSessionType('native');
-    setName('');
-    setProvider('acpx');
-    setThreadId('');
-    setWorkspace('');
-    setInstanceLabel('');
-    setEndpoint('');
-    setLaunchMode('attach');
+    setSessionType(initialSession?.sessionType || 'native');
+    setName(initialSession?.name || '');
+    setProvider(initialSession?.externalAgent?.provider || 'acpx');
+    setThreadId(initialSession?.externalAgent?.threadId || '');
+    setWorkspace(initialSession?.externalAgent?.workspace || '');
+    setInstanceLabel(initialSession?.externalAgent?.instanceLabel || '');
+    setEndpoint(initialSession?.externalAgent?.endpoint || '');
+    setLaunchMode(initialSession?.externalAgent?.launchMode || 'attach');
     setError('');
     setIsSubmitting(false);
   };
@@ -65,7 +90,7 @@ export function NewSessionDialog({ open, onClose, onCreateSession }: NewSessionD
 
     setIsSubmitting(true);
     try {
-      await onCreateSession({
+      await onSubmitSession({
         name,
         sessionType,
         externalAgent: sessionType === 'external_agent'
@@ -97,10 +122,8 @@ export function NewSessionDialog({ open, onClose, onCreateSession }: NewSessionD
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">New Session</div>
-            <h2 className="mt-2 text-2xl font-semibold text-neutral-900">创建一个新的 Agent Thread 会话</h2>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">
-              Native 会话直接运行在 OpenClaw 中；External Thread 会话用于绑定 ACPX、Codex、Claude Code 等外部 Agent 线程。
-            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-neutral-900">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">{description}</p>
           </div>
           <button
             type="button"
@@ -242,7 +265,7 @@ export function NewSessionDialog({ open, onClose, onCreateSession }: NewSessionD
             className="inline-flex items-center gap-2 rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-neutral-900 disabled:opacity-40"
           >
             <Plus size={15} />
-            <span>{isSubmitting ? '创建中...' : '创建会话'}</span>
+            <span>{isSubmitting ? '提交中...' : submitLabel}</span>
           </button>
         </div>
       </form>

@@ -5,7 +5,7 @@ import { ChatMessage } from '@/components/ChatMessage';
 import { ChatInput } from '@/components/ChatInput';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { RunInspector } from '@/components/RunInspector';
-import { Activity, Cable, Check, Clock3, PencilLine, Sparkles, X } from 'lucide-react';
+import { Activity, Cable, Check, Clock3, PencilLine, Settings2, Sparkles, X } from 'lucide-react';
 import { useRef, useEffect, useState } from 'react';
 import type { ChatMessage as ChatMessageItem, SessionSummary } from '@/types/chat';
 
@@ -16,10 +16,11 @@ function formatSessionTitle(sessionId: string | null, sessions: SessionSummary[]
 
 function App() {
   const { messages, isLoading, currentSessionId, sessions, runtimeEvents, streamStatus, hasToken } = useChatStore();
-  const { sendMessage, createSession, updateSessionName, loadSessions } = useChat();
+  const { sendMessage, createSession, updateSessionName, updateSessionBinding, loadSessions } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [isEditingBinding, setIsEditingBinding] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const currentTitle = formatSessionTitle(currentSessionId, sessions);
   const currentSession = sessions.find((session) => session.id === currentSessionId) || null;
@@ -82,10 +83,19 @@ function App() {
               <div className="mt-1 flex items-center gap-3">
                 <h1 className="text-2xl font-semibold">{currentTitle}</h1>
                 {currentSession?.sessionType === 'external_agent' && (
-                  <div className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
-                    <Cable size={12} />
-                    <span>{currentSession.externalAgent?.provider || 'external'}</span>
-                  </div>
+                  <>
+                    <div className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                      <Cable size={12} />
+                      <span>{currentSession.externalAgent?.provider || 'external'}</span>
+                    </div>
+                    <button
+                      onClick={() => setIsEditingBinding(true)}
+                      className="rounded-full border border-black/8 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50"
+                      title="编辑外部线程绑定"
+                    >
+                      <Settings2 size={15} />
+                    </button>
+                  </>
                 )}
                 {currentSessionId && (
                   <button
@@ -169,7 +179,20 @@ function App() {
       <NewSessionDialog
         open={isCreatingSession}
         onClose={() => setIsCreatingSession(false)}
-        onCreateSession={createSession}
+        onSubmitSession={createSession}
+      />
+      <NewSessionDialog
+        open={isEditingBinding}
+        onClose={() => setIsEditingBinding(false)}
+        onSubmitSession={async (input) => {
+          if (!currentSessionId) return;
+          await updateSessionBinding(currentSessionId, input);
+          setIsEditingBinding(false);
+        }}
+        title="编辑外部 Agent Thread 绑定"
+        description="更新当前会话绑定的 provider、thread id、workspace 和实例元数据。"
+        submitLabel="保存绑定"
+        initialSession={currentSession?.sessionType === 'external_agent' ? currentSession : null}
       />
     </div>
   );

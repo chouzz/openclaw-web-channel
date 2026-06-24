@@ -299,5 +299,21 @@ export function useChat() {
     }
   };
 
-  return { sendMessage, createSession, loadSessions, updateSessionName };
+  const updateSessionBinding = async (sessionId: string, input: CreateSessionInput) => {
+    const payload = {
+      sessionId,
+      name: input.name.trim(),
+      sessionType: input.sessionType,
+      externalAgent: input.externalAgent,
+    };
+
+    const updatedSession = await apiClient.fetch('/plugins/web-channel/api/session', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const normalizedSession = mapSession(updatedSession);
+    upsertSession(normalizedSession);
+  };
+
+  return { sendMessage, createSession, loadSessions, updateSessionName, updateSessionBinding };
 }
