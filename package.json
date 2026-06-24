@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "OpenClaw Web Channel Plugin - ChatGPT-style Web UI",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "keywords": ["openclaw", "web", "channel", "plugin", "chat", "sse"],
   "author": "chouzz",
   "license": "MIT",
@@ -16,12 +16,12 @@
     "PROPOSAL.md"
   ],
   "openclaw": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./dist/index.js"]
   },
   "scripts": {
     "build": "pnpm build:web && pnpm build:plugin",
     "build:web": "cd web && pnpm run build",
-    "build:plugin": "echo 'No plugin build step needed for TS ESM in dev mode'",
+    "build:plugin": "tsc",
     "dev": "pnpm dev:web",
     "dev:web": "cd web && pnpm dev",
     "lint": "eslint .",
