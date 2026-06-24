@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readSessionTranscriptEvents } from 'openclaw/plugin-sdk/session-transcript-runtime';
+
 import { addConnection, broadcast } from './sse.js';
 import { getConfig } from './config.js';
 import type { ChatMessage } from './types.js';
@@ -136,18 +136,6 @@ function toHistoryMessage(entry: any, index: number): ChatMessage | null {
 }
 
 async function loadTranscriptEvents(sessionFile: string): Promise<any[]> {
-  try {
-    const events = await readSessionTranscriptEvents(sessionFile);
-    if (Array.isArray(events)) return events;
-  } catch {
-    try {
-      const events = await readSessionTranscriptEvents({ sessionFile });
-      if (Array.isArray(events)) return events;
-    } catch {
-      // Fall through to raw transcript parsing below.
-    }
-  }
-
   const content = fs.readFileSync(sessionFile, 'utf8');
   return content
     .split('\n')

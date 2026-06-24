@@ -7,9 +7,3 @@ declare module 'openclaw/plugin-sdk/plugin-entry' {
     configSchema?: unknown;
   }): any;
 }
-
-declare module 'openclaw/plugin-sdk/session-transcript-runtime' {
-  export function readSessionTranscriptEvents(
-    input: string | { sessionFile: string },
-  ): Promise<any[]>;
-}
