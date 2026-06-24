@@ -4,8 +4,8 @@ import { SessionList } from '@/components/SessionList';
 import { ChatMessage } from '@/components/ChatMessage';
 import { ChatInput } from '@/components/ChatInput';
 import { RunInspector } from '@/components/RunInspector';
-import { Activity, Clock3, Sparkles } from 'lucide-react';
-import { useRef, useEffect } from 'react';
+import { Activity, Check, Clock3, PencilLine, Sparkles, X } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
 import type { ChatMessage as ChatMessageItem, SessionSummary } from '@/types/chat';
 
 function formatSessionTitle(sessionId: string | null, sessions: SessionSummary[]) {
@@ -14,9 +14,13 @@ function formatSessionTitle(sessionId: string | null, sessions: SessionSummary[]
 }
 
 function App() {
-  const { messages, isLoading, currentSessionId, sessions, runtimeEvents, streamStatus } = useChatStore();
-  const { sendMessage, createSession } = useChat();
+  const { messages, isLoading, currentSessionId, sessions, runtimeEvents, streamStatus, hasToken } = useChatStore();
+  const { sendMessage, createSession, updateSessionName, loadSessions } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const currentTitle = formatSessionTitle(currentSessionId, sessions);
+  const currentSession = sessions.find((session) => session.id === currentSessionId) || null;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -24,14 +28,64 @@ function App() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    setDraftTitle(currentTitle === 'OpenClaw' ? '' : currentTitle);
+    setIsEditingTitle(false);
+  }, [currentTitle]);
+
+  const handleRenameSubmit = async () => {
+    if (!currentSessionId || !draftTitle.trim()) {
+      setIsEditingTitle(false);
+      return;
+    }
+
+    await updateSessionName(currentSessionId, draftTitle);
+    setIsEditingTitle(false);
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f4f2ec] text-neutral-900">
-      <SessionList onCreateSession={createSession} />
+      <SessionList onCreateSession={createSession} onRefreshSessions={loadSessions} />
       <main className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex h-20 items-center justify-between border-b border-black/6 px-8">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Workspace</div>
-            <h1 className="mt-1 text-2xl font-semibold">{formatSessionTitle(currentSessionId, sessions)}</h1>
+            {isEditingTitle && currentSessionId ? (
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  value={draftTitle}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  className="min-w-[280px] rounded-2xl border border-black/8 bg-white px-4 py-2 text-2xl font-semibold outline-none"
+                />
+                <button
+                  onClick={handleRenameSubmit}
+                  className="rounded-full border border-black/8 bg-white p-2 text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <Check size={16} />
+                </button>
+                <button
+                  onClick={() => {
+                    setDraftTitle(currentTitle);
+                    setIsEditingTitle(false);
+                  }}
+                  className="rounded-full border border-black/8 bg-white p-2 text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-1 flex items-center gap-3">
+                <h1 className="text-2xl font-semibold">{currentTitle}</h1>
+                {currentSessionId && (
+                  <button
+                    onClick={() => setIsEditingTitle(true)}
+                    className="rounded-full border border-black/8 bg-white p-2 text-neutral-600 transition hover:bg-neutral-50"
+                  >
+                    <PencilLine size={15} />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2 text-sm text-neutral-600">
@@ -96,6 +150,8 @@ function App() {
         messages={messages}
         runtimeEvents={runtimeEvents}
         streamStatus={streamStatus}
+        currentSession={currentSession}
+        hasToken={hasToken}
       />
     </div>
   );

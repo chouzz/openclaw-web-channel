@@ -347,3 +347,38 @@ export async function handleConfig(req: IncomingMessage, res: ServerResponse, ap
     hasToken: !!config.webToken,
   });
 }
+
+export async function handleUpdateSession(req: IncomingMessage, res: ServerResponse, api: any) {
+  if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!requireAuth(req, res, api)) return;
+
+  try {
+    const bodyStr = await readBody(req);
+    const { sessionId, name } = JSON.parse(bodyStr);
+
+    if (!sessionId || !name || typeof name !== 'string') {
+      return sendJson(res, 400, { error: 'Missing sessionId or name' });
+    }
+
+    const sessionKey = getSessionKey(sessionId);
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const agentId = resolveAgentId(api, cfg);
+
+    const existingEntry = await runtime.session.getSessionEntry({ agentId, sessionKey }).catch(() => null);
+    const update = {
+      ...(existingEntry || {}),
+      name,
+      title: name,
+      updatedAt: Date.now(),
+    };
+
+    const result = runtime.session.patchSessionEntry
+      ? await runtime.session.patchSessionEntry({ agentId, sessionKey, update })
+      : await runtime.session.upsertSessionEntry({ agentId, sessionKey, update });
+
+    return sendJson(res, 200, normalizeSession(result || update));
+  } catch (error: any) {
+    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
+  }
+}

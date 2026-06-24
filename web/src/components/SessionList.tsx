@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FolderOpen, MessageSquare, Plus, Search, Sparkles } from 'lucide-react';
+import { FolderOpen, MessageSquare, Plus, RefreshCcw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import type { SessionSummary } from '@/types/chat';
 
@@ -14,11 +14,12 @@ function formatRelativeDate(timestamp: number) {
 
 interface SessionListProps {
   onCreateSession: () => void;
+  onRefreshSessions: () => void;
 }
 
-export function SessionList({ onCreateSession }: SessionListProps) {
+export function SessionList({ onCreateSession, onRefreshSessions }: SessionListProps) {
   const [query, setQuery] = useState('');
-  const { sessions, currentSessionId, setCurrentSessionId } = useChatStore();
+  const { sessions, currentSessionId, setCurrentSessionId, hasToken } = useChatStore();
 
   const filteredSessions = useMemo(() => sessions.filter((session) => (
     session.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -55,9 +56,18 @@ export function SessionList({ onCreateSession }: SessionListProps) {
       </div>
 
       <div className="border-b border-black/6 px-5 py-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
-          <Sparkles size={14} />
-          Workspace
+        <div className="mb-3 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} />
+            Workspace
+          </div>
+          <button
+            onClick={onRefreshSessions}
+            className="rounded-full border border-black/8 bg-white p-2 text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-700"
+            title="刷新会话"
+          >
+            <RefreshCcw size={14} />
+          </button>
         </div>
         <div className="rounded-2xl bg-white px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
           <div className="flex items-center gap-3 text-sm font-medium text-neutral-800">
@@ -67,6 +77,10 @@ export function SessionList({ onCreateSession }: SessionListProps) {
           <p className="mt-2 text-xs leading-5 text-neutral-500">
             当前展示真实的 Web 会话、历史记录和流式消息。
           </p>
+          <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
+            <ShieldCheck size={14} className={hasToken ? 'text-emerald-600' : 'text-neutral-400'} />
+            <span>{hasToken ? '已启用访问令牌' : '未启用访问令牌'}</span>
+          </div>
         </div>
       </div>
 

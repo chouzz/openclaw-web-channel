@@ -9,8 +9,11 @@ interface ChatState {
   isLoading: boolean;
   streamStatus: 'idle' | 'streaming' | 'error';
   runtimeEvents: RuntimeEventItem[];
+  hasToken: boolean;
   setSessions: (sessions: SessionSummary[]) => void;
   upsertSession: (session: SessionSummary) => void;
+  renameSession: (id: string, name: string) => void;
+  setHasToken: (hasToken: boolean) => void;
   setCurrentSessionId: (id: string | null) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
@@ -30,6 +33,7 @@ export const useChatStore = create<ChatState>((set) => ({
   isLoading: false,
   streamStatus: 'idle',
   runtimeEvents: [],
+  hasToken: false,
   setSessions: (sessions) => set({ sessions }),
   upsertSession: (session) => set((state) => {
     const existing = state.sessions.find((item) => item.id === session.id);
@@ -43,6 +47,12 @@ export const useChatStore = create<ChatState>((set) => ({
         .sort((a, b) => b.updatedAt - a.updatedAt),
     };
   }),
+  renameSession: (id, name) => set((state) => ({
+    sessions: state.sessions.map((session) => (
+      session.id === id ? { ...session, name, updatedAt: Date.now() } : session
+    )),
+  })),
+  setHasToken: (hasToken) => set({ hasToken }),
   setCurrentSessionId: (id) => set({ currentSessionId: id, messages: [], runtimeEvents: [], streamStatus: 'idle' }),
   setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),

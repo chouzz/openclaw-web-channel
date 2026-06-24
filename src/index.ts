@@ -38,6 +38,12 @@ export default definePluginEntry({
       handler: wrap(handlers.handleConfig),
     });
 
+    api.registerHttpRoute({
+      path: '/plugins/web-channel/api/session',
+      auth: 'plugin',
+      handler: wrap(handlers.handleUpdateSession),
+    });
+
     // SSE endpoint - prefix match for query params
     api.registerHttpRoute({
       path: '/plugins/web-channel/api/sse',

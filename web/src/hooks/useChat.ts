@@ -9,6 +9,8 @@ export function useChat() {
     setSessions,
     sessions,
     upsertSession,
+    renameSession,
+    setHasToken,
     setMessages,
     addMessage,
     updateAssistantMessage,
@@ -51,6 +53,15 @@ export function useChat() {
       }
     } catch (err) {
       console.error('Failed to load sessions', err);
+    }
+  });
+
+  const loadConfig = useEffectEvent(async () => {
+    try {
+      const config = await apiClient.fetch('/plugins/web-channel/api/config');
+      setHasToken(Boolean(config?.hasToken));
+    } catch (err) {
+      console.error('Failed to load config', err);
     }
   });
 
@@ -185,8 +196,9 @@ export function useChat() {
   });
 
   useEffect(() => {
+    loadConfig();
     loadSessions();
-  }, [loadSessions]);
+  }, [loadConfig, loadSessions]);
 
   useEffect(() => {
     if (!currentSessionId) return;
@@ -263,5 +275,25 @@ export function useChat() {
     useChatStore.getState().setCurrentSessionId(sessionId);
   };
 
-  return { sendMessage, createSession, loadSessions };
+  const updateSessionName = async (sessionId: string, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    renameSession(sessionId, trimmedName);
+
+    try {
+      const updatedSession = await apiClient.fetch('/plugins/web-channel/api/session', {
+        method: 'PATCH',
+        body: JSON.stringify({ sessionId, name: trimmedName }),
+      });
+      if (updatedSession?.id) {
+        upsertSession(mapSession(updatedSession));
+      }
+    } catch (error) {
+      console.error('Failed to rename session', error);
+      await loadSessions();
+    }
+  };
+
+  return { sendMessage, createSession, loadSessions, updateSessionName };
 }

@@ -1,11 +1,13 @@
 import { Activity, CircleAlert, Hammer, Radio } from 'lucide-react';
 
-import type { ChatMessage, RuntimeEventItem } from '@/types/chat';
+import type { ChatMessage, RuntimeEventItem, SessionSummary } from '@/types/chat';
 
 interface RunInspectorProps {
   messages: ChatMessage[];
   runtimeEvents: RuntimeEventItem[];
   streamStatus: 'idle' | 'streaming' | 'error';
+  currentSession: SessionSummary | null;
+  hasToken: boolean;
 }
 
 function formatTime(timestamp: number) {
@@ -13,6 +15,15 @@ function formatTime(timestamp: number) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  }).format(timestamp);
+}
+
+function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(timestamp);
 }
 
@@ -28,7 +39,7 @@ function getEventIcon(kind: RuntimeEventItem['kind']) {
   return Activity;
 }
 
-export function RunInspector({ messages, runtimeEvents, streamStatus }: RunInspectorProps) {
+export function RunInspector({ messages, runtimeEvents, streamStatus, currentSession, hasToken }: RunInspectorProps) {
   const toolResultCount = messages.reduce((count, message) => count + (message.toolResults?.length || 0), 0);
   const assistantMessages = messages.filter((message) => message.role === 'assistant').length;
   const latestEvents = [...runtimeEvents].reverse().slice(0, 8);
@@ -63,6 +74,17 @@ export function RunInspector({ messages, runtimeEvents, streamStatus }: RunInspe
             <div className="mt-3 text-sm font-medium text-neutral-800">{runtimeEvents.length} 个</div>
           </div>
         </div>
+        {currentSession && (
+          <div className="mt-4 rounded-2xl border border-black/8 bg-white px-4 py-4">
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">会话元数据</div>
+            <div className="mt-3 space-y-2 text-sm text-neutral-600">
+              <div className="break-all">{currentSession.id}</div>
+              <div>创建于 {formatDate(currentSession.createdAt)}</div>
+              <div>更新于 {formatDate(currentSession.updatedAt)}</div>
+              <div>{hasToken ? '当前接口需要授权' : '当前接口未启用授权'}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
