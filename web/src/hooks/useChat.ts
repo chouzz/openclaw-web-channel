@@ -76,6 +76,13 @@ export function useChat() {
       content: '',
       createdAt: Date.now(),
     });
+    addRuntimeEvent({
+      id: crypto.randomUUID(),
+      kind: 'status',
+      label: 'Assistant started',
+      timestamp: Date.now(),
+      payload: { phase: 'assistant_message_start' },
+    });
     return assistantId;
   });
 
@@ -102,6 +109,14 @@ export function useChat() {
             id: crypto.randomUUID(),
             kind: 'status',
             label: String(payload.status),
+            timestamp: Date.now(),
+            payload,
+          });
+        } else if (!payload.text) {
+          addRuntimeEvent({
+            id: crypto.randomUUID(),
+            kind: 'status',
+            label: 'Agent event',
             timestamp: Date.now(),
             payload,
           });
@@ -148,6 +163,13 @@ export function useChat() {
     });
 
     es.addEventListener('done', () => {
+      addRuntimeEvent({
+        id: crypto.randomUUID(),
+        kind: 'status',
+        label: 'Run completed',
+        timestamp: Date.now(),
+        payload: { status: 'done' },
+      });
       setIsLoading(false);
       setStreamStatus('idle');
       activeAssistantIdRef.current = null;
@@ -193,6 +215,13 @@ export function useChat() {
     setIsLoading(true);
     setStreamStatus('streaming');
     resetRuntimeEvents();
+    addRuntimeEvent({
+      id: crypto.randomUUID(),
+      kind: 'status',
+      label: 'Message submitted',
+      timestamp: Date.now(),
+      payload: { sessionId: currentSessionId, prompt: content },
+    });
 
     const nextSession = sessions.find((session) => session.id === currentSessionId) || {
       id: currentSessionId,

@@ -3,6 +3,7 @@ import { useChat } from '@/hooks/useChat';
 import { SessionList } from '@/components/SessionList';
 import { ChatMessage } from '@/components/ChatMessage';
 import { ChatInput } from '@/components/ChatInput';
+import { RunInspector } from '@/components/RunInspector';
 import { Activity, Clock3, Sparkles } from 'lucide-react';
 import { useRef, useEffect } from 'react';
 import type { ChatMessage as ChatMessageItem, SessionSummary } from '@/types/chat';
@@ -91,6 +92,11 @@ function App() {
           />
         )}
       </main>
+      <RunInspector
+        messages={messages}
+        runtimeEvents={runtimeEvents}
+        streamStatus={streamStatus}
+      />
     </div>
   );
 }
