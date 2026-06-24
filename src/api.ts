@@ -1,83 +1,273 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { readSessionTranscriptEvents } from 'openclaw/plugin-sdk/session-transcript-runtime';
 import { addConnection, broadcast } from './sse.js';
-import { getGatewayWS } from './gateway-ws.js';
 import { getConfig } from './config.js';
+import type { ChatMessage } from './types.js';
+
+const activeRuns = new Set<string>();
 
 async function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString();
+    });
     req.on('end', () => resolve(body));
     req.on('error', (err) => reject(err));
   });
 }
 
-function sendJson(res: ServerResponse, status: number, data: any) {
+function sendJson(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
+function isAuthorized(req: IncomingMessage, api: any): boolean {
+  const config = getConfig(api);
+  if (!config.webToken) return true;
+  return req.headers['authorization'] === `Bearer ${config.webToken}`;
+}
+
+function requireAuth(req: IncomingMessage, res: ServerResponse, api: any): boolean {
+  if (isAuthorized(req, api)) return true;
+  sendJson(res, 401, { error: 'Unauthorized' });
+  return false;
+}
+
+function getSessionKey(sessionId: string): string {
+  return sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
+}
+
+function getRuntimeConfig(api: any): any {
+  return api.config || api.runtime?.config?.current?.() || {};
+}
+
+function getAgentRuntime(api: any) {
+  const runtime = api.runtime?.agent;
+  if (!runtime) {
+    throw new Error('OpenClaw agent runtime API is unavailable');
+  }
+  return runtime;
+}
+
+function resolveAgentId(api: any, cfg: any): string {
+  const runtime = getAgentRuntime(api);
+  return (
+    runtime.resolveAgentId?.(cfg) ||
+    cfg?.defaultAgentId ||
+    cfg?.agentId ||
+    cfg?.agent?.id ||
+    api.agentId ||
+    'default'
+  );
+}
+
+function resolveSessionFile(api: any, cfg: any, sessionKey: string) {
+  const runtime = getAgentRuntime(api);
+  const agentDir = runtime.resolveAgentDir(cfg);
+  const workspaceDir = runtime.resolveAgentWorkspaceDir(cfg);
+  const sessionFile = path.join(agentDir, 'sessions', `${sessionKey}.jsonl`);
+
+  fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+  fs.closeSync(fs.openSync(sessionFile, 'a'));
+
+  return { agentDir, workspaceDir, sessionFile };
+}
+
+function extractText(value: any): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item.text === 'string') return item.text;
+        if (item && typeof item.content === 'string') return item.content;
+        return '';
+      })
+      .join('');
+  }
+  if (value && typeof value.text === 'string') return value.text;
+  if (value && typeof value.content === 'string') return value.content;
+  return '';
+}
+
+function toHistoryMessage(entry: any, index: number): ChatMessage | null {
+  if (!entry || typeof entry !== 'object') return null;
+
+  if (entry.role && (entry.content !== undefined || entry.text !== undefined)) {
+    return {
+      id: String(entry.id || entry.messageId || index),
+      role: entry.role,
+      content: extractText(entry.text ?? entry.content),
+      text: typeof entry.text === 'string' ? entry.text : undefined,
+      toolCalls: Array.isArray(entry.toolCalls) ? entry.toolCalls : undefined,
+      toolResults: Array.isArray(entry.toolResults) ? entry.toolResults : undefined,
+    };
+  }
+
+  const payload = entry.payload || entry.data || entry.message || entry.value || {};
+  const role = payload.role || entry.role || (entry.type === 'user' ? 'user' : entry.type === 'assistant' ? 'assistant' : undefined);
+  const content = extractText(payload.text ?? payload.content ?? entry.text ?? entry.content);
+
+  if (role && content) {
+    return {
+      id: String(payload.id || entry.id || entry.seq || index),
+      role,
+      content,
+      text: typeof payload.text === 'string' ? payload.text : undefined,
+      toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : undefined,
+      toolResults: Array.isArray(payload.toolResults) ? payload.toolResults : undefined,
+    };
+  }
+
+  if (entry.type === 'tool_result' || payload.type === 'tool_result') {
+    return {
+      id: String(entry.id || payload.id || index),
+      role: 'assistant',
+      content: '',
+      toolResults: [payload],
+    };
+  }
+
+  return null;
+}
+
+async function loadTranscriptEvents(sessionFile: string): Promise<any[]> {
+  try {
+    const events = await readSessionTranscriptEvents(sessionFile);
+    if (Array.isArray(events)) return events;
+  } catch {
+    try {
+      const events = await readSessionTranscriptEvents({ sessionFile });
+      if (Array.isArray(events)) return events;
+    } catch {
+      // Fall through to raw transcript parsing below.
+    }
+  }
+
+  const content = fs.readFileSync(sessionFile, 'utf8');
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function readHistoryMessages(sessionFile: string, sessionEntry?: any): Promise<ChatMessage[]> {
+  if (Array.isArray(sessionEntry?.messages)) {
+    return sessionEntry.messages
+      .map((entry: any, index: number) => toHistoryMessage(entry, index))
+      .filter((entry: ChatMessage | null): entry is ChatMessage => entry !== null);
+  }
+
+  const events = await loadTranscriptEvents(sessionFile);
+  return events
+    .map((entry, index) => toHistoryMessage(entry, index))
+    .filter((entry: ChatMessage | null): entry is ChatMessage => entry !== null);
+}
+
+function normalizeSession(entry: any) {
+  const sessionKey = entry?.sessionKey || entry?.id || entry?.key || '';
+  const plainId = typeof sessionKey === 'string' && sessionKey.startsWith('web:')
+    ? sessionKey.slice(4)
+    : sessionKey;
+
+  return {
+    ...entry,
+    id: plainId || entry?.id,
+    sessionKey,
+    name: entry?.name || entry?.title || plainId || sessionKey,
+    createdAt: entry?.createdAt || entry?.created_at || Date.now(),
+    updatedAt: entry?.updatedAt || entry?.updated_at || entry?.lastUpdatedAt || entry?.createdAt || Date.now(),
+  };
+}
+
 export async function handleChat(req: IncomingMessage, res: ServerResponse, api: any) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!requireAuth(req, res, api)) return;
+
+  let sessionId = '';
+  let doneSent = false;
 
   try {
-    const config = getConfig(api);
-    if (config.webToken) {
-      const auth = req.headers['authorization'];
-      if (!auth || auth !== `Bearer ${config.webToken}`) {
-        return sendJson(res, 401, { error: 'Unauthorized' });
-      }
-    }
-
-    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const bodyStr = await readBody(req);
-    const { sessionId, message } = JSON.parse(bodyStr);
+    const { sessionId: rawSessionId, message } = JSON.parse(bodyStr);
 
-    if (!sessionId || !message) {
+    if (!rawSessionId || !message) {
       return sendJson(res, 400, { error: 'Missing sessionId or message' });
     }
 
-    const sessionKey = sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
+    sessionId = rawSessionId;
+    const sessionKey = getSessionKey(sessionId);
 
-    // Set up event forwarding once
-    if (!(gws as any)._streamingSetup) {
-      (gws as any)._streamingSetup = true;
-      gws.onEvent((event: any) => {
-        if (event.event === 'agent') {
-          const payload = event.payload || {};
-          const sId = payload.sessionKey?.startsWith('web:')
-            ? payload.sessionKey.slice(4)
-            : payload.sessionKey;
-          if (sId) {
-            const text = payload.text || '';
-            if (text) {
-              broadcast(sId, 'agent', { text, ...payload });
-            }
-            if (payload.status === 'done') {
-              broadcast(sId, 'done', payload);
-            }
-          }
-        }
-      });
+    if (activeRuns.has(sessionKey)) {
+      broadcast(sessionId, 'error', { message: 'A run is already in progress for this session' });
+      return sendJson(res, 409, { error: 'A run is already in progress for this session' });
     }
 
-    const result = await gws.chatSend(sessionKey, message);
-    sendJson(res, 200, result);
+    activeRuns.add(sessionKey);
+
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const { agentDir, workspaceDir, sessionFile } = resolveSessionFile(api, cfg, sessionKey);
+    const timeoutMs = runtime.resolveAgentTimeoutMs?.(cfg) || 120000;
+    const runId = crypto.randomUUID();
+
+    const result = await runtime.runEmbeddedAgent({
+      sessionId: sessionKey,
+      sessionKey,
+      agentId: resolveAgentId(api, cfg),
+      messageChannel: 'web-channel',
+      sessionFile,
+      workspaceDir,
+      agentDir,
+      prompt: message,
+      timeoutMs,
+      runId,
+      onAssistantMessageStart: async () => {
+        broadcast(sessionId, 'agent', { text: '' });
+      },
+      onPartialReply: async (payload: { text?: string }) => {
+        if (payload?.text) {
+          broadcast(sessionId, 'agent', { text: payload.text });
+        }
+      },
+      onToolResult: async (payload: any) => {
+        broadcast(sessionId, 'tool_result', payload);
+      },
+      onAgentEvent: async (evt: any) => {
+        const payload = evt?.data || evt?.payload || evt;
+        const status = payload?.status;
+        broadcast(sessionId, 'agent', payload);
+        if (status === 'done') {
+          doneSent = true;
+          broadcast(sessionId, 'done', payload);
+        }
+      },
+    });
+
+    if (!doneSent) {
+      broadcast(sessionId, 'done', {});
+    }
+    return sendJson(res, 200, result);
   } catch (error: any) {
-    sendJson(res, 500, { error: error.message });
+    if (sessionId) {
+      broadcast(sessionId, 'error', { message: error?.message || 'Unknown error' });
+    }
+    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
+  } finally {
+    if (sessionId) {
+      activeRuns.delete(getSessionKey(sessionId));
+    }
   }
 }
 
 export async function handleSSE(req: IncomingMessage, res: ServerResponse, api: any) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-
-  const config = getConfig(api);
-  if (config.webToken) {
-    const auth = req.headers['authorization'];
-    if (!auth || auth !== `Bearer ${config.webToken}`) {
-      return sendJson(res, 401, { error: 'Unauthorized' });
-    }
-  }
+  if (!requireAuth(req, res, api)) return;
 
   const url = new URL(req.url || '', 'http://localhost');
   const sessionId = url.searchParams.get('sessionId');
@@ -99,40 +289,30 @@ export async function handleSSE(req: IncomingMessage, res: ServerResponse, api: 
 
 export async function handleListSessions(req: IncomingMessage, res: ServerResponse, api: any) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!requireAuth(req, res, api)) return;
 
   try {
-    const config = getConfig(api);
-    if (config.webToken) {
-      const auth = req.headers['authorization'];
-      if (!auth || auth !== `Bearer ${config.webToken}`) {
-        return sendJson(res, 401, { error: 'Unauthorized' });
-      }
-    }
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const agentId = resolveAgentId(api, cfg);
+    const entries = await runtime.session.listSessionEntries({ agentId });
+    const sessions = Array.isArray(entries) ? entries : entries?.entries || [];
+    const webSessions = sessions
+      .filter((entry: any) => typeof (entry?.sessionKey || entry?.id) === 'string')
+      .filter((entry: any) => String(entry.sessionKey || entry.id).startsWith('web:'))
+      .map(normalizeSession);
 
-    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
-    const sessions = await gws.listSessions();
-    const webSessions = Array.isArray(sessions)
-      ? sessions.filter((s: any) => s.sessionKey?.startsWith('web:'))
-      : [];
-    sendJson(res, 200, webSessions);
+    return sendJson(res, 200, webSessions);
   } catch (error: any) {
-    sendJson(res, 500, { error: error.message });
+    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
   }
 }
 
 export async function handleHistory(req: IncomingMessage, res: ServerResponse, api: any) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!requireAuth(req, res, api)) return;
 
   try {
-    const config = getConfig(api);
-    if (config.webToken) {
-      const auth = req.headers['authorization'];
-      if (!auth || auth !== `Bearer ${config.webToken}`) {
-        return sendJson(res, 401, { error: 'Unauthorized' });
-      }
-    }
-
-    const gws = await getGatewayWS(config.gatewayUrl, config.gatewayToken);
     const url = new URL(req.url || '', 'http://localhost');
     const sessionId = url.searchParams.get('sessionId');
 
@@ -140,11 +320,26 @@ export async function handleHistory(req: IncomingMessage, res: ServerResponse, a
       return sendJson(res, 400, { error: 'Missing sessionId' });
     }
 
-    const sessionKey = sessionId.startsWith('web:') ? sessionId : `web:${sessionId}`;
-    const history = await gws.chatHistory(sessionKey);
-    sendJson(res, 200, history);
+    const sessionKey = getSessionKey(sessionId);
+    const cfg = getRuntimeConfig(api);
+    const runtime = getAgentRuntime(api);
+    const agentId = resolveAgentId(api, cfg);
+    const { sessionFile } = resolveSessionFile(api, cfg, sessionKey);
+    let sessionEntry: any;
+
+    try {
+      sessionEntry = await runtime.session.getSessionEntry({ agentId, sessionKey });
+    } catch {
+      if (!fs.existsSync(sessionFile) || fs.statSync(sessionFile).size === 0) {
+        return sendJson(res, 200, []);
+      }
+    }
+
+    const history = await readHistoryMessages(sessionFile, sessionEntry);
+
+    return sendJson(res, 200, history);
   } catch (error: any) {
-    sendJson(res, 500, { error: error.message });
+    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
   }
 }
 
@@ -152,9 +347,7 @@ export async function handleConfig(req: IncomingMessage, res: ServerResponse, ap
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
   const config = getConfig(api);
-  // Don't expose gateway token to the browser
-  sendJson(res, 200, {
-    gatewayUrl: config.gatewayUrl,
+  return sendJson(res, 200, {
     hasToken: !!config.webToken,
   });
 }

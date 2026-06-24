@@ -2,7 +2,7 @@
   "id": "web-channel",
   "name": "Web Channel",
   "description": "ChatGPT-style Web UI for OpenClaw via REST API + SSE",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "contracts": {
     "tools": []
   },
@@ -16,14 +16,6 @@
       "token": {
         "type": "string",
         "description": "Web access token for authentication"
-      },
-      "gatewayUrl": {
-        "type": "string",
-        "description": "Gateway WebSocket URL (default: auto-detect)"
-      },
-      "gatewayToken": {
-        "type": "string",
-        "description": "Gateway auth token (default: auto-detect from gateway config)"
       }
     }
   }
