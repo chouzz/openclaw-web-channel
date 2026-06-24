@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { clsx } from 'clsx';
+import { ToolResultCard } from '@/components/ToolResultCard';
 import type { ToolResultItem } from '@/types/chat';
 
 interface ChatMessageProps {
@@ -32,14 +33,7 @@ export function ChatMessage({ role, content, toolResults }: ChatMessageProps) {
         {toolResults && toolResults.length > 0 && (
           <div className="mt-4 space-y-2 border-t border-black/6 pt-4">
             {toolResults.map((result, index) => (
-              <div key={result.id || index} className="rounded-2xl bg-[#f7f6f3] p-3">
-                <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-neutral-400">
-                  Tool Result
-                </div>
-                <pre className="overflow-x-auto text-xs leading-6 text-neutral-600">
-                  {JSON.stringify(result.output, null, 2)}
-                </pre>
-              </div>
+              <ToolResultCard key={result.id || index} result={result} />
             ))}
           </div>
         )}

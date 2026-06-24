@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { apiClient } from '@/api/client';
+import { normalizeToolResult } from '@/lib/toolResult';
 import type { ChatMessage, SessionSummary, ToolResultItem } from '@/types/chat';
 
 export function useChat() {
@@ -29,10 +30,7 @@ export function useChat() {
     content: message.text || (Array.isArray(message.content) ? message.content.map((item: any) => item.text || '').join('') : message.content) || '',
     createdAt: Date.now(),
     toolResults: Array.isArray(message.toolResults)
-      ? message.toolResults.map((result: any) => ({
-          id: result.id || crypto.randomUUID(),
-          output: result.output,
-        }))
+      ? message.toolResults.map((result: any) => normalizeToolResult(result))
       : undefined,
   });
 
@@ -140,17 +138,15 @@ export function useChat() {
     es.addEventListener('tool_result', (event) => {
       try {
         const payload = JSON.parse(event.data) as ToolResultItem;
+        const normalizedResult = normalizeToolResult(payload);
         const assistantId = ensureAssistantMessage();
-        addToolResultToMessage(assistantId, {
-          id: payload.id || crypto.randomUUID(),
-          output: payload.output,
-        });
+        addToolResultToMessage(assistantId, normalizedResult);
         addRuntimeEvent({
           id: crypto.randomUUID(),
           kind: 'tool_result',
-          label: 'Tool result',
+          label: normalizedResult.name || 'Tool result',
           timestamp: Date.now(),
-          payload,
+          payload: normalizedResult.raw,
         });
       } catch {
         // Ignore malformed tool result data

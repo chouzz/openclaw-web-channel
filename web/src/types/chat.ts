@@ -7,7 +7,10 @@ export interface SessionSummary {
 
 export interface ToolResultItem {
   id: string;
+  name?: string;
+  status?: string;
   output: unknown;
+  raw: unknown;
 }
 
 export interface ChatMessage {

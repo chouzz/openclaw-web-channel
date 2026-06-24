@@ -1,5 +1,7 @@
 import { Activity, CircleAlert, Hammer, Radio } from 'lucide-react';
 
+import { ToolResultCard } from '@/components/ToolResultCard';
+import { normalizeToolResult } from '@/lib/toolResult';
 import type { ChatMessage, RuntimeEventItem, SessionSummary } from '@/types/chat';
 
 interface RunInspectorProps {
@@ -43,6 +45,10 @@ export function RunInspector({ messages, runtimeEvents, streamStatus, currentSes
   const toolResultCount = messages.reduce((count, message) => count + (message.toolResults?.length || 0), 0);
   const assistantMessages = messages.filter((message) => message.role === 'assistant').length;
   const latestEvents = [...runtimeEvents].reverse().slice(0, 8);
+  const latestToolResults = messages
+    .flatMap((message) => message.toolResults || [])
+    .slice(-3)
+    .reverse();
 
   return (
     <aside className="hidden w-[340px] shrink-0 border-l border-black/6 bg-[#f8f6f1] xl:flex xl:flex-col">
@@ -88,6 +94,21 @@ export function RunInspector({ messages, runtimeEvents, streamStatus, currentSes
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
+        <div className="mb-6">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">最新工具结果</div>
+          {latestToolResults.length > 0 ? (
+            <div className="space-y-3">
+              {latestToolResults.map((result) => (
+                <ToolResultCard key={result.id} result={result} compact />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-black/10 px-4 py-5 text-sm leading-6 text-neutral-400">
+              当前还没有收到工具结果。
+            </div>
+          )}
+        </div>
+
         <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">实时事件</div>
         {latestEvents.length > 0 ? (
           <div className="space-y-3">
@@ -103,9 +124,15 @@ export function RunInspector({ messages, runtimeEvents, streamStatus, currentSes
                     <div className="text-xs text-neutral-400">{formatTime(event.timestamp)}</div>
                   </div>
                   <div className="mt-3 text-sm font-medium text-neutral-800">{event.label}</div>
-                  <pre className="mt-3 overflow-x-auto rounded-2xl bg-[#f7f6f3] p-3 text-xs leading-6 text-neutral-500">
-                    {JSON.stringify(event.payload, null, 2)}
-                  </pre>
+                  {event.kind === 'tool_result' ? (
+                    <div className="mt-3">
+                      <ToolResultCard result={normalizeToolResult(event.payload)} compact />
+                    </div>
+                  ) : (
+                    <pre className="mt-3 overflow-x-auto rounded-2xl bg-[#f7f6f3] p-3 text-xs leading-6 text-neutral-500">
+                      {JSON.stringify(event.payload, null, 2)}
+                    </pre>
+                  )}
                 </div>
               );
             })}
