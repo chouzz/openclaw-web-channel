@@ -242,10 +242,18 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, api:
     }
     return sendJson(res, 200, result);
   } catch (error: any) {
+    const message = error?.message || 'Unknown error';
+    // Map known internal errors to user-friendly messages
+    const friendlyMessage = message.includes('No API key found')
+      ? 'Agent API key not configured. Please run `openclaw agents add <id>` to set up authentication.'
+      : message.includes('agent runtime')
+        ? 'Agent runtime is not available. Please check your OpenClaw setup.'
+        : message;
+
     if (sessionId) {
-      broadcast(sessionId, 'error', { message: error?.message || 'Unknown error' });
+      broadcast(sessionId, 'error', { message: friendlyMessage });
     }
-    return sendJson(res, 500, { error: error?.message || 'Unknown error' });
+    return sendJson(res, 500, { error: friendlyMessage });
   } finally {
     if (sessionId) {
       activeRuns.delete(getSessionKey(sessionId));

@@ -38,20 +38,41 @@ export function useChat() {
     let assistantContent = '';
 
     es.addEventListener('agent', (event) => {
-      const payload = JSON.parse(event.data);
-      if (payload.text) {
-        assistantContent += payload.text;
-        updateLastMessage(assistantContent);
-      } else if (payload.content) {
-        // Handle full content replacement if needed
-        const textContent = Array.isArray(payload.content)
-          ? payload.content.map((c: any) => c.text || '').join('')
-          : (typeof payload.content === 'string' ? payload.content : '');
-
-        if (textContent) {
-          assistantContent = textContent;
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.text) {
+          assistantContent += payload.text;
           updateLastMessage(assistantContent);
+        } else if (payload.content) {
+          // Handle full content replacement if needed
+          const textContent = Array.isArray(payload.content)
+            ? payload.content.map((c: any) => c.text || '').join('')
+            : (typeof payload.content === 'string' ? payload.content : '');
+
+          if (textContent) {
+            assistantContent = textContent;
+            updateLastMessage(assistantContent);
+          }
         }
+      } catch {
+        // Ignore malformed SSE data
+      }
+    });
+
+    es.addEventListener('error', (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data);
+        if (payload.message) {
+          const errorMsg = `[Error] ${payload.message}`;
+          if (assistantContent) {
+            assistantContent += '\n\n' + errorMsg;
+            updateLastMessage(assistantContent);
+          } else {
+            addMessage({ id: Date.now().toString(), role: 'assistant', content: errorMsg });
+          }
+        }
+      } catch {
+        // Ignore malformed error data
       }
     });
 
@@ -84,7 +105,8 @@ export function useChat() {
         body: JSON.stringify({ sessionId: currentSessionId, message: content }),
       });
     } catch (error) {
-      console.error('Failed to send message:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to send message';
+      addMessage({ id: Date.now().toString(), role: 'assistant', content: `[Error] ${msg}` });
       setIsLoading(false);
     }
   };

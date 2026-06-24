@@ -9,7 +9,9 @@ export const apiClient = {
 
     const res = await fetch(path, { ...options, headers });
     if (!res.ok) {
-      throw new Error(`API error: ${res.statusText}`);
+      const body = await res.json().catch(() => ({}));
+      const message = body?.error || res.statusText;
+      throw new Error(message);
     }
     return res.json();
   },
