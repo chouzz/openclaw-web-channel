@@ -3,6 +3,7 @@
   "name": "Web Channel",
   "description": "ChatGPT-style Web UI for OpenClaw via REST API + SSE",
   "version": "0.2.0",
+  "entry": "dist/index.js",
   "contracts": {
     "tools": []
   },
