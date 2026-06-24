@@ -41,7 +41,8 @@ export function useChat() {
       try {
         const payload = JSON.parse(event.data);
         if (payload.text) {
-          assistantContent += payload.text;
+          // onPartialReply sends cumulative text, not delta
+          assistantContent = payload.text;
           updateLastMessage(assistantContent);
         } else if (payload.content) {
           // Handle full content replacement if needed
